@@ -1,12 +1,17 @@
 cmake_minimum_required(VERSION 2.8.12)
-set(PROJECT_NAME_STR thundersvm)
-project(${PROJECT_NAME_STR} C CXX)
 
+cmake_policy(SET CMP0048 NEW)
+
+project(thundersvm VERSION 0.1.0 LANGUAGES C CXX)
 set(USE_CUDA ON CACHE BOOL "Compile with CUDA")
 set(USE_EIGEN OFF CACHE BOOL "Compile with Eigen")
 
 find_package(Threads REQUIRED)
-
+find_package(OpenMP REQUIRED)
+if (OPENMP_FOUND)
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+endif()
 #find_package(MKL REQUIRED)
 #include_directories(${MKL_INCLUDE_DIRS})
 #link_directories(${MKL_LIBRARIES})
@@ -15,7 +20,6 @@ find_package(Threads REQUIRED)
 #mkl_sequential
 #mkl_core
 #)
-
 if (USE_CUDA)
     message("Compile with CUDA")
     find_package(CUDA REQUIRED QUIET)
@@ -23,11 +27,6 @@ if (USE_CUDA)
     set(LINK_LIBRARY ${CUDA_cusparse_LIBRARY})
 else ()
     message("Compile without CUDA")
-    find_package(OpenMP)
-    if (OPENMP_FOUND)
-        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
-    endif ()
 endif ()
 
 if (USE_EIGEN)
@@ -49,7 +48,7 @@ set(COMMON_INCLUDES ${PROJECT_SOURCE_DIR}/include ${CMAKE_CURRENT_BINARY_DIR})
 set(DATASET_DIR ${PROJECT_SOURCE_DIR}/dataset/)
 configure_file(include/thundersvm/config.h.in config.h)
 
-set(PROJECT_LIB_NAME ${PROJECT_NAME}-lib)
+set(PROJECT_LIB_NAME ${PROJECT_NAME})
 include_directories(${COMMON_INCLUDES})
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/thundersvm)
 
@@ -58,4 +57,3 @@ set(PROJECT_TEST_NAME ${PROJECT_NAME}-test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/test)
 add_custom_target(runtest
         COMMAND ${PROJECT_TEST_NAME})
-

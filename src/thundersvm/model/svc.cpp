@@ -63,7 +63,7 @@ void SVC::train(const DataSet &dataset, SvmParam param) {
         vector<int> original_index = dataset_.original_index(i);
         DataSet::node2d i_instances = dataset_.instances(i);
         for (int j = 0; j < i_instances.size(); ++j) {
-            if (is_sv[original_index[j]]){
+            if (is_sv[original_index[j]]) {
                 n_sv[i]++;
                 sv.push_back(i_instances[j]);
             }
@@ -71,29 +71,29 @@ void SVC::train(const DataSet &dataset, SvmParam param) {
     }
 
     n_total_sv = sv.size();
-    LOG(INFO)<<"#total unique sv = "<<n_total_sv;
+    LOG(INFO) << "#total unique sv = " << n_total_sv;
     coef.resize((n_classes - 1) * n_total_sv);
 
-    vector<int> sv_start(1,0);
+    vector<int> sv_start(1, 0);
     for (int i = 1; i < n_classes; ++i) {
-        sv_start.push_back(sv_start[i-1] + n_sv[i-1]);
+        sv_start.push_back(sv_start[i - 1] + n_sv[i - 1]);
     }
 
     k = 0;
     for (int i = 0; i < n_classes; ++i) {
-        for (int j = i+1; j < n_classes; ++j) {
-            vector<int> original_index = dataset_.original_index(i,j);
+        for (int j = i + 1; j < n_classes; ++j) {
+            vector<int> original_index = dataset_.original_index(i, j);
             int ci = dataset_.count()[i];
             int cj = dataset_.count()[j];
             int m = sv_start[i];
             for (int l = 0; l < ci; ++l) {
-                if (is_sv[original_index[l]]){
-                    coef[(j-1) * n_total_sv + m++] = alpha[k][l];
+                if (is_sv[original_index[l]]) {
+                    coef[(j - 1) * n_total_sv + m++] = alpha[k][l];
                 }
             }
             m = sv_start[j];
             for (int l = ci; l < ci + cj; ++l) {
-                if (is_sv[original_index[l]]){
+                if (is_sv[original_index[l]]) {
                     coef[i * n_total_sv + m++] = alpha[k][l];
                 }
             }
@@ -106,7 +106,7 @@ void SVC::train(const DataSet &dataset, SvmParam param) {
         LOG(INFO) << "performing probability train";
         probA.resize(n_binary_models);
         probB.resize(n_binary_models);
-        probability_train(dataset);
+        probability_train(dataset_);
     }
 }
 
@@ -129,13 +129,13 @@ void SVC::train_binary(const DataSet &dataset, int i, int j, SyncData<float_type
     int ws_size = min(max2power(ins.size()), 1024);
     CSMOSolver solver;
     solver.solve(k_mat, y, alpha, rho, f_val, param.epsilon, param.C * c_weight[i], param.C * c_weight[j], ws_size);
-    LOG(INFO)<<"rho = "<<rho;
+    LOG(INFO) << "rho = " << rho;
     int n_sv = 0;
     for (int l = 0; l < alpha.size(); ++l) {
         alpha[l] *= y[l];
         if (alpha[l] != 0) n_sv++;
     }
-    LOG(INFO)<<"#sv = "<<n_sv;
+    LOG(INFO) << "#sv = " << n_sv;
 }
 
 vector<float_type> SVC::predict(const DataSet::node2d &instances, int batch_size) {
@@ -371,8 +371,49 @@ void sigmoidTrain(const float_type *decValues, const int l, const vector<int> &l
 }
 
 void SVC::probability_train(const DataSet &dataset) {
-    SyncData<float_type> dec_values(dataset.n_instances() * n_binary_models);
-    predict_dec_values(dataset.instances(), dec_values, 10000);
+    SvmParam param_no_prob = param;
+    param_no_prob.probability = 0;
+
+    vector<float_type> dec_predict_all(dataset.n_instances() * n_binary_models);
+
+    //cross-validation dec_values
+    int n_fold = 5;
+    for (int k = 0; k < n_fold; ++k) {
+        SvmModel *temp_model = new SVC();
+        DataSet::node2d x_train, x_test;
+        vector<float_type> y_train, y_test;
+        vector<int> test_idx;
+        for (int i = 0; i < dataset.n_classes(); ++i) {
+            int fold_test_count = dataset.count()[i] / n_fold;
+            vector<int> class_idx = dataset.original_index(i);
+            auto idx_begin = class_idx.begin() + fold_test_count * k;
+            auto idx_end = idx_begin;
+            if (k == n_fold - 1) {
+                idx_end = class_idx.end();
+            } else {
+                while (idx_end != class_idx.end() && idx_end - idx_begin < fold_test_count) idx_end++;
+            }
+            for (int j: vector<int>(idx_begin, idx_end)) {
+                x_test.push_back(dataset.instances()[j]);
+                y_test.push_back(dataset.y()[j]);
+                test_idx.push_back(j);
+            }
+            class_idx.erase(idx_begin, idx_end);
+            for (int j:class_idx) {
+                x_train.push_back(dataset.instances()[j]);
+                y_train.push_back(dataset.y()[j]);
+            }
+        }
+        DataSet train_dataset(x_train, dataset.n_features(), y_train);
+        temp_model->train(train_dataset, param_no_prob);
+        SyncData<float_type> dec_predict(x_test.size() * n_binary_models);
+        temp_model->predict_dec_values(x_test, dec_predict, 1000);
+        for (int i = 0; i < x_test.size(); ++i) {
+            memcpy(&dec_predict_all[test_idx[i] * n_binary_models], &dec_predict[i * n_binary_models],
+                   sizeof(float_type) * n_binary_models);
+        }
+        delete temp_model;
+    }
     int k = 0;
     for (int i = 0; i < n_classes; ++i) {
         for (int j = i + 1; j < n_classes; ++j) {
@@ -382,12 +423,12 @@ void SVC::probability_train(const DataSet &dataset) {
             ori_idx = dataset.original_index(i);
             for (int l = 0; l < dataset.count()[i]; ++l) {
                 y.push_back(+1);
-                dec_values_subproblem.push_back(dec_values[ori_idx[l] * n_binary_models + k]);
+                dec_values_subproblem.push_back(dec_predict_all[ori_idx[l] * n_binary_models + k]);
             }
             ori_idx = dataset.original_index(j);
             for (int l = 0; l < dataset.count()[j]; ++l) {
                 y.push_back(-1);
-                dec_values_subproblem.push_back(dec_values[ori_idx[l] * n_binary_models + k]);
+                dec_values_subproblem.push_back(dec_predict_all[ori_idx[l] * n_binary_models + k]);
             }
             sigmoidTrain(dec_values_subproblem.data(), dec_values_subproblem.size(), y, probA[k], probB[k]);
             k++;

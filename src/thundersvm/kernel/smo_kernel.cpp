@@ -3,6 +3,7 @@
 // Created by jiashuai on 17-11-7.
 //
 
+#ifndef USE_CUDA
 #include <thundersvm/kernel/smo_kernel.h>
 
 namespace svm_kernel {
@@ -292,7 +293,8 @@ namespace svm_kernel {
     update_f(SyncData<float_type> &f, const SyncData<float_type> &alpha_diff, const SyncData<float_type> &k_mat_rows,
              int n_instances) {
         //"n_instances" equals to the number of rows of the whole kernel matrix for both SVC and SVR.
-        KERNEL_LOOP(idx, n_instances) {//one thread to update multiple fvalues.
+#pragma omp parallel for schedule(guided)
+        for (int idx = 0; idx < n_instances; ++idx) {
             float_type sum_diff = 0;
             for (int i = 0; i < alpha_diff.size(); ++i) {
                 float_type d = alpha_diff[i];
@@ -315,4 +317,5 @@ namespace svm_kernel {
         }
     }
 }
+#endif
 

@@ -5,6 +5,7 @@
 #include <thrust/system/cuda/detail/par.h>
 #include "thundersvm/kernel/smo_kernel.h"
 
+#ifdef USE_CUDA
 namespace svm_kernel {
 
     __device__ int get_block_min(const float *values, int *index) {
@@ -72,14 +73,14 @@ namespace svm_kernel {
             float local_diff = low_value - up_value;
             if (numOfIter == 0) {
                 local_eps = max(eps, 0.1f * local_diff);
+                if (tid == 0) {
+                    diff[0] = local_diff;
+                }
             }
 
             if (local_diff < local_eps) {
                 alpha[wsi] = a;
                 alpha_diff[tid] = -(a - aold) * y;
-                if (tid == 0) {
-                    diff[0] = local_diff;
-                }
                 break;
             }
             __syncthreads();
@@ -306,3 +307,4 @@ namespace svm_kernel {
                             f_idx2sort.device_data(), thrust::less<float_type>());
     }
 }
+#endif

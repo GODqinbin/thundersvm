@@ -9,11 +9,11 @@ Here we provide a quick start tutorial for users to install and test ThunderSVM.
 ## Installation
 * Clone ThunderSVM repository
 ```bash
-git clone git@github.com:zeyiwen/mascot.git
+git clone --recursive git@github.com:zeyiwen/thundersvm.git
 ```
 * Download testing datasets
 ```bash
-cd mascot
+cd thundersvm
 dataset/get_datasets.sh
 ```
 * Build binary for testing
@@ -65,3 +65,6 @@ Instructions available in [How To](how-to.md) page.
 ./thundersvm -s 3 -t 2 -g 3.8 -c 1000 abalone_scale svm.model
 ```
 The meaning of each option can be found in the [parameters](parameters.md) page. 
+
+### Interfaces
+ThunderSVM provides python, R and Matlab interface. You can find the instructions in corresponding subdirectory.

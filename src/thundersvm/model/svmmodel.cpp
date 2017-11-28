@@ -28,22 +28,27 @@ void SvmModel::model_setup(const DataSet &dataset, SvmParam &param) {
 vector<float_type> SvmModel::cross_validation(DataSet dataset, SvmParam param, int n_fold) {
     dataset.group_classes(this->param.svm_type == SvmParam::C_SVC);//group classes only for classification
 
-    vector<float_type> y_test_all;
-    vector<float_type> y_predict_all;
+    vector<float_type> y_predict_all(dataset.n_instances());
 
     for (int k = 0; k < n_fold; ++k) {
         LOG(INFO) << n_fold << " fold cross-validation(" << k + 1 << "/" << n_fold << ")";
         DataSet::node2d x_train, x_test;
         vector<float_type> y_train, y_test;
+        vector<int> test_idx;
         for (int i = 0; i < dataset.n_classes(); ++i) {
             int fold_test_count = dataset.count()[i] / n_fold;
             vector<int> class_idx = dataset.original_index(i);
             auto idx_begin = class_idx.begin() + fold_test_count * k;
             auto idx_end = idx_begin;
-            while (idx_end != class_idx.end() && idx_end - idx_begin < fold_test_count) idx_end++;
+            if (k == n_fold - 1) {
+                idx_end = class_idx.end();
+            } else {
+                while (idx_end != class_idx.end() && idx_end - idx_begin < fold_test_count) idx_end++;
+            }
             for (int j: vector<int>(idx_begin, idx_end)) {
                 x_test.push_back(dataset.instances()[j]);
                 y_test.push_back(dataset.y()[j]);
+                test_idx.push_back(j);
             }
             class_idx.erase(idx_begin, idx_end);
             for (int j:class_idx) {
@@ -54,12 +59,12 @@ vector<float_type> SvmModel::cross_validation(DataSet dataset, SvmParam param, i
         DataSet train_dataset(x_train, dataset.n_features(), y_train);
         this->train(train_dataset, param);
         vector<float_type> y_predict = this->predict(x_test, 1000);
-        y_test_all.insert(y_test_all.end(), y_test.begin(), y_test.end());
-        y_predict_all.insert(y_predict_all.end(), y_predict.begin(), y_predict.end());
+        CHECK_EQ(y_predict.size(), test_idx.size());
+        for (int i = 0; i < y_predict.size(); ++i) {
+            y_predict_all[test_idx[i]] = y_predict[i];
+        }
     }
-    vector<float_type> test_predict = y_test_all;
-    test_predict.insert(test_predict.end(), y_predict_all.begin(), y_predict_all.end());
-    return test_predict;
+    return y_predict_all;
 }
 
 
@@ -143,7 +148,18 @@ void SvmModel::save_to_file(string path) {
         }
         fs_model<< endl;
     }
-    //todo save probA and probB
+    if (param.probability == 1) {
+        fs_model << "probA ";
+        for (int i = 0; i < n_binary_models; ++i) {
+            fs_model << probA[i] << " ";
+        }
+        fs_model << endl;
+        fs_model << "probB ";
+        for (int i = 0; i < n_binary_models; ++i) {
+            fs_model << probB[i] << " ";
+        }
+        fs_model << endl;
+    }
     fs_model << "SV " << endl;
     for (int i = 0; i < sv.size(); i++) {
         for (int j = 0; j < n_classes - 1; ++j) {
@@ -209,6 +225,17 @@ void SvmModel::load_from_file(string path) {
         } else if (feature == "nr_sv") {
             for (int i = 0; i < n_classes; ++i) {
                 ifs >> n_sv[i];
+            }
+        } else if (feature == "probA") {
+            param.probability = 1;
+            probA = vector<float_type>(n_binary_models);
+            for (int i = 0; i < n_binary_models; ++i) {
+                ifs >> probA[i];
+            }
+        } else if (feature == "probB") {
+            probB = vector<float_type>(n_binary_models);
+            for (int i = 0; i < n_binary_models; ++i) {
+                ifs >> probB[i];
             }
         } else if (feature == "SV") {
             sv.clear();
