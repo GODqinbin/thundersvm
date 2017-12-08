@@ -329,6 +329,7 @@ namespace svm_kernel {
         const float_type *alpha_diff_data = alpha_diff.host_data();
         const float_type *k_mat_rows_data = k_mat_rows.host_data();
 #pragma omp parallel for schedule(guided)
+//#pragma omp simd
         for (int idx = 0; idx < n_instances; ++idx) {
             float_type sum_diff = 0;
             for (int i = 0; i < alpha_diff.size(); ++i) {
