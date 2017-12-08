@@ -1,7 +1,7 @@
 //
 // Created by jiashuai on 17-11-7.
 //
-
+//#define USE_PARA
 #include <thundersvm/kernel/kernelmatrix_kernel.h>
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
@@ -15,11 +15,16 @@ namespace svm_kernel {
         const int *row_ptr_data = row_ptr.host_data();
         const int *col_ind_data = col_ind.host_data();
         const float_type *val_data = val.host_data();
-//#pragma omp parallel for schedule(guided)
+#ifdef USE_PARA
+#pragma omp parallel for schedule(guided)
+#else
 #pragma omp for simd
+#endif
         for (int i = 0; i < m; i++) {
             int row = data_row_idx_data[i];
+#ifndef USE_PARA
 #pragma omp simd
+#endif
             for (int j = row_ptr_data[row]; j < row_ptr_data[row + 1]; ++j) {
                 int col = col_ind_data[j];
                 data_rows_data[col * m + i] = val_data[j]; // row-major for cuSPARSE
@@ -34,10 +39,12 @@ namespace svm_kernel {
         float_type *dot_product_data = dot_product.host_data();
         const float_type *self_dot0_data = self_dot0.host_data();
         const float_type *self_dot1_data = self_dot1.host_data();
-//#pragma omp parallel for schedule(guided)
-#pragma omp for simd
+//#ifdef USE_PARA
+#pragma omp parallel for schedule(guided)
+//#else
+//#pragma omp for simd
         for (int i = 0; i < m; i++) {
-#pragma omp simd
+//#pragma omp simd
             for (int j = 0; j < n; ++j) {
                 dot_product_data[i * n + j] = expf(
                         -(self_dot0_data[i] + self_dot1_data[j] - dot_product_data[i * n + j] * 2) * gamma);
@@ -91,8 +98,11 @@ namespace svm_kernel {
         const float_type *k_mat_data = k_mat.host_data();
         float_type *dec_values_data = dec_values.host_data();
         const float_type *rho_data = rho.host_data();
+#ifdef USE_PARA
 #pragma omp parallel for schedule(guided)
-//#pragma omp for simd
+#else
+#pragma omp for simd
+#endif
         for (int idx = 0; idx < n_instances; idx++) {
             int k = 0;
             int n_binary_models = n_classes * (n_classes - 1) / 2;
@@ -106,13 +116,19 @@ namespace svm_kernel {
                     const float_type *coef2 = &coef_data[i * total_sv];
                     const float_type *k_values = &k_mat_data[idx * total_sv];
                     float_type sum = 0;
-//#pragma omp parallel for reduction(+:sum)
+#ifdef USE_PARA
+#pragma omp parallel for reduction(+:sum)
+#else
 #pragma omp simd reduction(+:sum)
+#endif
                     for (int l = 0; l < ci; ++l) {
                         sum += coef1[si + l] * k_values[si + l];
                     }
-//#pragma omp parallel for reduction(+:sum)
+#ifdef USE_PARA
+#pragma omp parallel for reduction(+:sum)
+#else
 #pragma omp simd reduction(+:sum)
+#endif
                     for (int l = 0; l < cj; ++l) {
                         sum += coef2[sj + l] * k_values[sj + l];
                     }
