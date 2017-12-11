@@ -6,6 +6,7 @@
 
 #include <thundersvm/kernel/smo_kernel.h>
 #include <omp.h>
+#define SIMD_SMO
 namespace svm_kernel {
     int get_min_idx(const float *values, int size) {
         int min_idx = 0;
@@ -62,7 +63,10 @@ namespace svm_kernel {
         float local_eps;
         int numOfIter = 0;
         while (1) {
-            //select fUp and fLow
+#ifdef SIMD_SMO
+#pragma omp simd
+#endif
+           //select fUp and fLow
             for (int tid = 0; tid < ws_size; ++tid) {
                 int wsi = working_set[tid];
                 if (is_I_up(alpha[wsi], y[wsi], Cp, Cn))
@@ -72,9 +76,15 @@ namespace svm_kernel {
             }
             int i = get_min_idx(f_val2reduce, ws_size);
             float up_value = f_val2reduce[i];
-            for (int tid = 0; tid < ws_size; ++tid) {
+#ifdef SIMD_SMO
+#pragma omp simd
+#endif
+           for (int tid = 0; tid < ws_size; ++tid) {
                 kIwsI[tid] = k_mat_rows[row_len * i + working_set[tid]];//K[i, wsi]
             }
+#ifdef SIMD_SMO
+#pragma omp simd
+#endif
 
             for (int tid = 0; tid < ws_size; ++tid) {
                 int wsi = working_set[tid];
@@ -99,6 +109,9 @@ namespace svm_kernel {
                 diff[0] = local_diff;
                 break;
             }
+#ifdef SIMD_SMO
+#pragma omp simd
+#endif
 
             //select j2 using second order heuristic
             for (int tid = 0; tid < ws_size; ++tid) {
@@ -124,6 +137,9 @@ namespace svm_kernel {
             alpha[working_set[i]] += l * y[working_set[i]];
 //            if (tid == j2)
             alpha[working_set[j2]] -= l * y[working_set[j2]];
+#ifdef SIMD_SMO
+#pragma omp simd
+#endif
 
             //update f
             for (int tid = 0; tid < ws_size; ++tid) {
@@ -179,6 +195,9 @@ namespace svm_kernel {
         int numOfIter = 0;
         while (1) {
             //select I_up (y=+1)
+#ifdef SIMD_SMO
+#pragma omp simd
+#endif
             for (int tid = 0; tid < ws_size; ++tid) {
                 int wsi = working_set[tid];
                 if (y[wsi] > 0 && alpha[wsi] < C)
@@ -191,7 +210,9 @@ namespace svm_kernel {
             for (int tid = 0; tid < ws_size; ++tid) {
                 kIpwsI[tid] = k_mat_rows[row_len * ip + working_set[tid]];//K[i, wsi]
             }
-
+#ifdef SIMD_SMO
+#pragma omp simd
+#endif 
             //select I_up (y=-1)
             for (int tid = 0; tid < ws_size; ++tid) {
                 int wsi = working_set[tid];
@@ -202,11 +223,18 @@ namespace svm_kernel {
             }
             int in = get_min_idx(f_val2reduce, ws_size);
             float up_value_n = f_val2reduce[in];
+#ifdef SIMD_SMO
+#pragma omp simd
+#endif
+ 
             for (int tid = 0; tid < ws_size; ++tid) {
                 kInwsI[tid] = k_mat_rows[row_len * in + working_set[tid]];//K[i, wsi]
             }
 
             //select I_low (y=+1)
+#ifdef SIMD_SMO
+#pragma omp simd
+#endif 
             for (int tid = 0; tid < ws_size; ++tid) {
                 int wsi = working_set[tid];
                 if (y[wsi] > 0 && alpha[wsi] > 0)
@@ -216,7 +244,9 @@ namespace svm_kernel {
             }
             int j1p = get_min_idx(f_val2reduce, ws_size);
             float low_value_p = -f_val2reduce[j1p];
-
+#ifdef SIMD_SMO
+#pragma omp simd
+#endif 
             //select I_low (y=-1)
             for (int tid = 0; tid < ws_size; ++tid) {
                 int wsi = working_set[tid];
@@ -242,7 +272,9 @@ namespace svm_kernel {
                 }
                 break;
             }
-
+#ifdef SIMD_SMO
+#pragma omp simd
+#endif 
             //select j2p using second order heuristic
             for (int tid = 0; tid < ws_size; ++tid) {
                 int wsi = working_set[tid];
@@ -255,7 +287,9 @@ namespace svm_kernel {
             }
             int j2p = get_min_idx(f_val2reduce, ws_size);
             float f_val_j2p = f_val2reduce[j2p];
-
+#ifdef SIMD_SMO
+#pragma omp simd
+#endif 
             //select j2n using second order heuristic
             for (int tid = 0; tid < ws_size; ++tid) {
                 int wsi = working_set[tid];
@@ -295,7 +329,9 @@ namespace svm_kernel {
 
             alpha[working_set[i]] += l * y[working_set[i]];
             alpha[working_set[j2]] -= l * y[working_set[j2]];
-
+#ifdef SIMD_SMO
+#pragma omp simd
+#endif 
             //update f
             for (int tid = 0; tid < ws_size; ++tid) {
                 int wsi = working_set[tid];
@@ -329,10 +365,13 @@ namespace svm_kernel {
         const float_type *alpha_diff_data = alpha_diff.host_data();
         const float_type *k_mat_rows_data = k_mat_rows.host_data();
 #pragma omp parallel for schedule(guided)
-//#pragma omp simd
+//#pragma omp for simd schedule(guided)
         for (int idx = 0; idx < n_instances; ++idx) {
             float_type sum_diff = 0;
+//#pragma omp parallel for reduction(+:sum_diff)
+//#pragma omp simd reduction(+:sum_diff)
             for (int i = 0; i < alpha_diff.size(); ++i) {
+//		sum_diff += alpha_diff_data[i] * k_mat_rows_data[i * n_instances + idx];
                 float_type d = alpha_diff_data[i];
                 if (d != 0) {
                     sum_diff += d * k_mat_rows_data[i * n_instances + idx];
