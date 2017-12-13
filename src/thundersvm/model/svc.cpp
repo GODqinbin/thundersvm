@@ -38,6 +38,7 @@ void SVC::model_setup(const DataSet &dataset, SvmParam &param) {
 }
 
 void SVC::train(const DataSet &dataset, SvmParam param) {
+    TIMED_SCOPE(timerObj, "train");
     DataSet dataset_ = dataset;
     dataset_.group_classes();
     model_setup(dataset_, param);
