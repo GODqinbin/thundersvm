@@ -67,6 +67,7 @@ namespace svm_kernel {
 #pragma omp simd
 #endif
            //select fUp and fLow
+//#pragma omp parallel for
             for (int tid = 0; tid < ws_size; ++tid) {
                 int wsi = working_set[tid];
                 if (is_I_up(alpha[wsi], y[wsi], Cp, Cn))
@@ -74,6 +75,7 @@ namespace svm_kernel {
                 else
                     f_val2reduce[tid] = INFINITY;
             }
+//#pragma omp barrier
             int i = get_min_idx(f_val2reduce, ws_size);
             float up_value = f_val2reduce[i];
 #ifdef SIMD_SMO

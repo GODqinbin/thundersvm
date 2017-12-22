@@ -61,7 +61,7 @@ private:
     size_t n_instances_;
     size_t n_features_;
     SvmParam param;
-
+public:
     void dns_csr_mul(const SyncArray<float_type> &dense_mat, int n_rows, SyncArray<float_type> &result) const;
 
     void get_dot_product(const SyncArray<int> &idx, SyncArray<float_type> &dot_product) const;

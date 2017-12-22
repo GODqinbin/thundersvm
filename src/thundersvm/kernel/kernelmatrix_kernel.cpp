@@ -27,7 +27,7 @@ namespace svm_kernel {
 #endif
             for (int j = row_ptr_data[row]; j < row_ptr_data[row + 1]; ++j) {
                 int col = col_ind_data[j];
-                data_rows_data[col * m + i] = val_data[j]; // row-major for cuSPARSE
+                data_rows_data[col * m + i] = val_data[j]; // col-major for cuSPARSE
             }
         }
     }
@@ -142,7 +142,7 @@ namespace svm_kernel {
     void dns_csr_mul(int m, int n, int k, const SyncArray<float_type> &dense_mat, const SyncArray<float_type> &csr_val,
                      const SyncArray<int> &csr_row_ptr, const SyncArray<int> &csr_col_ind, int nnz,
                      SyncArray<float_type> &result) {
-/*
+	//TIMED_SCOPE(timerObj, "dns_csr_mul");
         float alpha(1), beta(0);
         char transa = 'n';
         char matdesca[6];
@@ -157,19 +157,30 @@ namespace svm_kernel {
         const int *col_ind = csr_col_ind.host_data();
         const int *row_ptr = csr_row_ptr.host_data();
         const float_type *dense = dense_mat.host_data();
-//        PERFORMANCE_CHECKPOINT_WITH_ID(timerObj, "3");
+/*
+	PERFORMANCE_CHECKPOINT_WITH_ID(timerObj, "before mkl_mul");
         mkl_scsrmm(&transa, &m, &n, &k, &alpha, matdesca, val, col_ind,
                    row_ptr, row_ptr + 1, dense, &n, &beta,
                    kernel, &n);
-//        PERFORMANCE_CHECKPOINT_WITH_ID(timerObj, "mkl_mul");
-        float_type *re = result.host_data();
+        PERFORMANCE_CHECKPOINT_WITH_ID(timerObj, "mkl_mul");
+*/
+	
+	//for(int i = 0; i < n; i++){
+//		PERFORMANCE_CHECKPOINT_WITH_ID(timerObj, "before mkl_mvmul");
+		mkl_scsrmv(&transa, &m, &k, &alpha, matdesca, val, col_ind,
+		   row_ptr, row_ptr + 1, dense,     &beta,
+		   kernel);
+  //      	PERFORMANCE_CHECKPOINT_WITH_ID(timerObj, "after mkl_mvmul");
+	//}
+ 
+	float_type *re = result.host_data();
 //        PERFORMANCE_CHECKPOINT_WITH_ID(timerObj, "4");
         mkl_somatcopy('r', 't', m, n, 1, kernel, n, re, m);
 //        PERFORMANCE_CHECKPOINT_WITH_ID(timerObj, "5");
         delete[] kernel;
-*/
 
 
+/*
         Eigen::Map<const Eigen::MatrixXf> denseMat(dense_mat.host_data(), n, k);
         Eigen::Map<const Eigen::SparseMatrix<float, Eigen::RowMajor>> sparseMat(m, k, nnz, csr_row_ptr.host_data(),
                                                                                 csr_col_ind.host_data(),
@@ -179,6 +190,6 @@ namespace svm_kernel {
         Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor> >(result.host_data(),
                 retMat.rows(),
                 retMat.cols()) = retMat;
-
+*/
     }
 }

@@ -132,13 +132,17 @@ KernelMatrix::dns_csr_mul(const SyncArray<float_type> &dense_mat, int n_rows, Sy
 }
 
 void KernelMatrix::get_dot_product(const SyncArray<int> &idx, SyncArray<float_type> &dot_product) const {
+    TIMED_SCOPE(timerObj, "get_dot_product");
     SyncArray<float_type> data_rows(idx.size() * n_features_);
     data_rows.mem_set(0);
     get_working_set_ins(val_, col_ind_, row_ptr_, idx, data_rows, idx.size());
+    PERFORMANCE_CHECKPOINT_WITH_ID(timerObj, "get working set");
     dns_csr_mul(data_rows, idx.size(), dot_product);
+    PERFORMANCE_CHECKPOINT_WITH_ID(timerObj, "dns csr mul");
 }
 
 void KernelMatrix::get_dot_product(const DataSet::node2d &instances, SyncArray<float_type> &dot_product) const {
+    TIMED_SCOPE(timerObj, "get_dot_product");
     SyncArray<float_type> dense_ins(instances.size() * n_features_);
     dense_ins.mem_set(0);
     float_type *dense_ins_data = dense_ins.host_data();
@@ -153,7 +157,9 @@ void KernelMatrix::get_dot_product(const DataSet::node2d &instances, SyncArray<f
             }
         }
     }
+    PERFORMANCE_CHECKPOINT_WITH_ID(timerObj, "get working set");
     dns_csr_mul(dense_ins, instances.size(), dot_product);
+    PERFORMANCE_CHECKPOINT_WITH_ID(timerObj, "dns csr mul");
 }
 
 

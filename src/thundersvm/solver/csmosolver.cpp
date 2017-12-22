@@ -9,6 +9,7 @@ using namespace svm_kernel;
 void
 CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<float_type> &alpha, float_type &rho,
                   SyncArray<float_type> &f_val, float_type eps, float_type Cp, float_type Cn, int ws_size) const {
+    TIMED_SCOPE(timerObj, "solve");
     int n_instances = k_mat.n_instances();
     int q = ws_size / 2;
 
@@ -65,8 +66,10 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
             k_mat.get_rows(working_set_last_half, k_mat_rows_last_half);
         }
         //local smo
+	PERFORMANCE_CHECKPOINT_WITH_ID(timerObj, "before smo_kernel");
         smo_kernel(y, f_val, alpha, alpha_diff, working_set, Cp, Cn, k_mat_rows, k_mat.diag(), n_instances, eps, diff,
                    max_iter);
+	PERFORMANCE_CHECKPOINT_WITH_ID(timerObj, "after smo_kernel");
         //update f
         update_f(f_val, alpha_diff, k_mat_rows, k_mat.n_instances());
         if (iter % 10 == 0) {

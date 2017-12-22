@@ -64,7 +64,7 @@ void CMDParser::parse_command_line(int argc, char **argv) {
 	#else
 		bin_name = bin_name.substr(bin_name.find_last_of("/") + 1);
 	#endif
-    if (bin_name == "thundersvm-train" || bin_name == "thundersvm-train.exe") {
+    if (bin_name == "thundersvm-train" || bin_name == "thundersvm-train.exe" || bin_name == "thundersvm-testmkl") {
         // parse options
         for (i = 1; i < argc; i++) {
             if (argv[i][0] != '-') break;
