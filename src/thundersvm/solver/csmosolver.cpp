@@ -9,6 +9,7 @@ using namespace svm_kernel;
 void
 CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<float_type> &alpha, float_type &rho,
                   SyncArray<float_type> &f_val, float_type eps, float_type Cp, float_type Cn, int ws_size) const {
+    TIMED_SCOPE(timerObj, "solve");
     int n_instances = k_mat.n_instances();
     int q = ws_size / 2;
 
@@ -52,24 +53,42 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
         sort_f(f_val2sort, f_idx2sort);
         vector<int> ws_indicator(n_instances, 0);
         if (0 == iter) {
-            select_working_set(ws_indicator, f_idx2sort, y, alpha, Cp, Cn, working_set);
-            k_mat.get_rows(working_set, k_mat_rows);
+            {
+		TIMED_SCOPE(timerObj, "select working set");
+		select_working_set(ws_indicator, f_idx2sort, y, alpha, Cp, Cn, working_set);
+	    }
+            {
+		TIMED_SCOPE(timerObj, "get rows");
+	    	k_mat.get_rows(working_set, k_mat_rows);
+	    }
         } else {
             working_set_first_half.copy_from(working_set_last_half);
             int *working_set_data = working_set.host_data();
             for (int i = 0; i < q; ++i) {
                 ws_indicator[working_set_data[i]] = 1;
             }
-            select_working_set(ws_indicator, f_idx2sort, y, alpha, Cp, Cn, working_set_last_half);
+            {
+		TIMED_SCOPE(timerObj, "select working set");
+		select_working_set(ws_indicator, f_idx2sort, y, alpha, Cp, Cn, working_set_last_half);
+	    }
             k_mat_rows_first_half.copy_from(k_mat_rows_last_half);
-            k_mat.get_rows(working_set_last_half, k_mat_rows_last_half);
+            {
+		TIMED_SCOPE(timerObj, "get rows");
+		k_mat.get_rows(working_set_last_half, k_mat_rows_last_half);
+	    }
         }
         //local smo
-        smo_kernel(y, f_val, alpha, alpha_diff, working_set, Cp, Cn, k_mat_rows, k_mat.diag(), n_instances, eps, diff,
+        {
+	TIMED_SCOPE(timerObj, "smo_kernel");
+	smo_kernel(y, f_val, alpha, alpha_diff, working_set, Cp, Cn, k_mat_rows, k_mat.diag(), n_instances, eps, diff,
                    max_iter);
+	}
         //update f
+        {
+	TIMED_SCOPE(timerObj, "update_f");
         update_f(f_val, alpha_diff, k_mat_rows, k_mat.n_instances());
-        if (iter % 10 == 0) {
+        }
+	if (iter % 10 == 0) {
             printf(".");
             std::cout.flush();
         }

@@ -1,4 +1,5 @@
 numactl --membind=4,5,6,7 build/bin/thundersvm-train -c 100 -g 0.5 /home/h/haofu/qinbin/thundersvm/dataset/a9a > log/a9a.log
+numactl --membind=4,5,6,7 build/bin/thundersvm-train -c 10 -g 0.125 /home/h/haofu/qinbin/thundersvm/dataset/mnist.scale > log/mnist.scale.log
 #build/bin/thundersvm-train -c 100 -g 0.125 /home/qinbin/thundersvm_zeyi/thundersvm/dataset/rcv1_train.binary > log/rcv1.log
 #build/bin/thundersvm-train -c 4 -g 0.5 /home/qinbin/thundersvm_zeyi/thundersvm/dataset/real-sim > log/real-sim.log
 #build/bin/thundersvm-train -c 10 -g 0.5 /home/qinbin/thundersvm_zeyi/thundersvm/dataset/w8a > log/w8a.log
