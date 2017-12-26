@@ -15,7 +15,8 @@
 
 int main(int argc, char **argv) {
     try {
-        CMDParser parser;
+        el::Loggers::addFlag(el::LoggingFlag::FixedTimeFormat);
+	CMDParser parser;
         parser.parse_command_line(argc, argv);
         DataSet train_dataset;
         train_dataset.load_from_file(parser.svmtrain_input_file_name);
