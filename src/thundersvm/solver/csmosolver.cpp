@@ -13,7 +13,9 @@ using namespace svm_kernel;
 void
 CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<float_type> &alpha, float_type &rho,
                   SyncArray<float_type> &f_val, float_type eps, float_type Cp, float_type Cn, int ws_size) const {
-    int n_instances = k_mat.n_instances();
+	TIMED_SCOPE(timerObj, "solve");    
+
+int n_instances = k_mat.n_instances();
     int q = ws_size / 2;
 
     SyncArray<int> working_set(ws_size);
@@ -44,12 +46,14 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
     if(k_mat_rows_size > hbw_size/4) {
         k_mat_rows = (float_type *) malloc(k_mat_rows_size);
         cache_line_num = hbw_size / (n_instances * sizeof(float_type));
-        kernel_record = (float_type *) hbw_malloc(cache_line_num * cache_row_size * sizeof(float_type));
+        //cache_line_num = 5000;
+	kernel_record = (float_type *) hbw_malloc(cache_line_num * cache_row_size * sizeof(float_type));
     }
     else {
         k_mat_rows = (float_type *) hbw_malloc(k_mat_rows_size);
         cache_line_num = (hbw_size - k_mat_rows_size) / (n_instances * sizeof(float_type));
-        kernel_record = (float_type *) hbw_malloc(cache_line_num * cache_row_size * sizeof(float_type));
+        //cache_line_num = 5000;
+	kernel_record = (float_type *) hbw_malloc(cache_line_num * cache_row_size * sizeof(float_type));
     }
     float_type *k_mat_rows_first_half = k_mat_rows;
     float_type *k_mat_rows_last_half = k_mat_rows + ws_kernel_size / 2;
@@ -85,16 +89,26 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
         sort_f(f_val2sort, f_idx2sort);
         vector<int> ws_indicator(n_instances, 0);
         if (0 == iter) {
+	{
+		TIMED_SCOPE(timerObj, "select working set");
             select_working_set(ws_indicator, f_idx2sort, y, alpha, Cp, Cn, working_set);
+	}
+	{
+		TIMED_SCOPE(timerObj, "get rows");
             k_mat.get_rows(working_set, k_mat_rows, ws_kernel_size);
-
-
+	}
+	{
+		TIMED_SCOPE(timerObj, "smo kernel");
             smo_kernel(y, f_val, alpha, alpha_diff, working_set, Cp, Cn, k_mat_rows, k_mat.diag(), n_instances, eps,
                        diff, max_iter);
-
+	}
+	{
+		TIMED_SCOPE(timerObj, "update f");
             //update f
             update_f(f_val, alpha_diff, k_mat_rows, k_mat.n_instances());
-
+	}
+	{
+		TIMED_SCOPE(timerObj, "update cache");
             for(int i = 0; i < ws_size; i++){
                 int wsi = working_set_data[i];
                 used_num[wsi]++;
@@ -120,6 +134,7 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
                     free_cache_index++;
                 }
             }
+	}
             for(int i = 0; i < ws_size; i++)
                 working_set_cal_rank_data[i] = i;
 
@@ -130,9 +145,10 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
                 ws_indicator[working_set_data[i]] = 1;
             }
 
-
+	{
+		TIMED_SCOPE(timerObj, "select working set");
             select_working_set(ws_indicator, f_idx2sort, y, alpha, Cp, Cn, working_set_last_half);
-
+	}
 
             int rank = 0;
             int reuse_num_first_half = 0;
@@ -159,16 +175,25 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
                     working_set_cal_last_half.push_back(working_set_data[i]);
                 }
             }
-
+	{
+		TIMED_SCOPE(timerObj, "get rows");
             k_mat.get_rows(working_set_cal_last_half, k_mat_rows_last_half, ws_kernel_size / 2);
-
-            //local smo
+	}
+        {
+		TIMED_SCOPE(timerObj, "smo kernel");
+	    //local smo
             smo_kernel(y, f_val, alpha, alpha_diff, working_set, Cp, Cn, k_mat_rows, k_mat.diag(), n_instances, eps, diff,
                        max_iter, cacheIndex, kernel_record, working_set_cal_rank_data);
-            //update f
+        }
+	{
+		TIMED_SCOPE(timerObj, "update f");
+		//update f
             update_f(f_val, alpha_diff, k_mat_rows, k_mat.n_instances(), kernel_record, working_set_cal_rank_data,
                      cacheIndex, working_set_data);
-            for(int i = 0; i < ws_size; i++)
+        }
+	{
+		TIMED_SCOPE(timerObj, "update cache");
+	    for(int i = 0; i < ws_size; i++)
                 used_num[working_set_data[i]]++;
             for(int i = q; i < ws_size; i++){
                 int wsi = working_set_data[i];
@@ -199,6 +224,7 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
                     }
                 }
             }
+	}
         }
         if (iter % 10 == 0) {
             printf(".");
