@@ -15,19 +15,38 @@ namespace svm_kernel {
                         const SyncArray<int> &data_row_idx, SyncArray<float_type> &data_rows, int m);
 
     void
+    get_working_set_ins(const SyncArray<float_type> &val, const SyncArray<int> &col_ind, const SyncArray<int> &row_ptr,
+                        vector<int> &data_row_idx, SyncArray<float_type> &data_rows, int m);
+    
+    void
     RBF_kernel(const SyncArray<float_type> &self_dot0, const SyncArray<float_type> &self_dot1,
                SyncArray<float_type> &dot_product, int m,
                int n,
                float_type gamma);
+
 
     void
     RBF_kernel(const SyncArray<int> &self_dot0_idx, const SyncArray<float_type> &self_dot1,
                SyncArray<float_type> &dot_product, int m,
                int n, float_type gamma);
 
+    void
+    RBF_kernel(const SyncArray<int> &self_dot0_idx, const SyncArray<float_type> &self_dot1,
+               float_type *dot_product_data, int m,
+               int n, float_type gamma);
+
+    void
+    RBF_kernel(vector<int> &self_dot0_idx, const SyncArray<float_type> &self_dot1,
+               float_type* dot_product, int m,
+               int n, float_type gamma);
+
     void poly_kernel(SyncArray<float_type> &dot_product, float_type gamma, float_type coef0, int degree, int mn);
 
+    void poly_kernel(float_type* dot_product, float_type gamma, float_type coef0, int degree, int mn);
+
     void sigmoid_kernel(SyncArray<float_type> &dot_product, float_type gamma, float_type coef0, int mn);
+
+    void sigmoid_kernel(float_type* dot_product, float_type gamma, float_type coef0, int mn);
 
     void sum_kernel_values(const SyncArray<float_type> &coef, int total_sv, const SyncArray<int> &sv_start,
                            const SyncArray<int> &sv_count, const SyncArray<float_type> &rho,
@@ -37,6 +56,10 @@ namespace svm_kernel {
     void dns_csr_mul(int m, int n, int k, const SyncArray<float_type> &dense_mat, const SyncArray<float_type> &csr_val,
                      const SyncArray<int> &csr_row_ptr, const SyncArray<int> &csr_col_ind, int nnz,
                      SyncArray<float_type> &result);
+
+    void dns_csr_mul(int m, int n, int k, const SyncArray<float_type> &dense_mat, const SyncArray<float_type> &csr_val,
+                     const SyncArray<int> &csr_row_ptr, const SyncArray<int> &csr_col_ind, int nnz,
+                     float_type *result);
 }
 #endif //THUNDERSVM_KERNELMATRIX_KERNEL_H
 

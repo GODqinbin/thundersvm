@@ -88,6 +88,48 @@ void KernelMatrix::get_rows(const SyncArray<int> &idx,
     }
 }
 
+void KernelMatrix::get_rows(const SyncArray<int> &idx,
+                            float_type *kernel_rows,
+                            long k_mat_rows_size) const {//compute multiple rows of kernel matrix according to idx
+    CHECK_GE(k_mat_rows_size, idx.size() * n_instances_) << "kernel_rows memory is too small";
+    get_dot_product(idx, kernel_rows);
+    switch (param.kernel_type) {
+        case SvmParam::RBF:
+            RBF_kernel(idx, self_dot_, kernel_rows, idx.size(), n_instances_, param.gamma);
+            break;
+        case SvmParam::LINEAR:
+            //do nothing
+            break;
+        case SvmParam::POLY:
+            poly_kernel(kernel_rows, param.gamma, param.coef0, param.degree, k_mat_rows_size);
+            break;
+        case SvmParam::SIGMOID:
+            sigmoid_kernel(kernel_rows, param.gamma, param.coef0, k_mat_rows_size);
+            break;
+    }
+}
+
+void KernelMatrix::get_rows(vector<int> &working_set_cal,
+                            float_type* kernel_rows,
+                            long k_mat_rows_size) const {//compute multiple rows of kernel matrix according to idx
+    CHECK_GE(k_mat_rows_size, working_set_cal.size() * n_instances_) << "kernel_rows memory is too small";
+    get_dot_product(working_set_cal, kernel_rows);
+    switch (param.kernel_type) {
+        case SvmParam::RBF:
+            RBF_kernel(working_set_cal, self_dot_, kernel_rows, working_set_cal.size(), n_instances_, param.gamma);
+            break;
+        case SvmParam::LINEAR:
+            //do nothing
+            break;
+        case SvmParam::POLY:
+            poly_kernel(kernel_rows, param.gamma, param.coef0, param.degree, k_mat_rows_size);
+            break;
+        case SvmParam::SIGMOID:
+            sigmoid_kernel(kernel_rows, param.gamma, param.coef0, k_mat_rows_size);
+            break;
+    }
+}
+
 void KernelMatrix::get_rows(const DataSet::node2d &instances,
                             SyncArray<float_type> &kernel_rows) const {//compute the whole (sub-) kernel matrix of the given instances.
     CHECK_GE(kernel_rows.size(), instances.size() * n_instances_) << "kernel_rows memory is too small";
@@ -131,12 +173,33 @@ KernelMatrix::dns_csr_mul(const SyncArray<float_type> &dense_mat, int n_rows, Sy
     svm_kernel::dns_csr_mul(n_instances_, n_rows, n_features_, dense_mat, val_, row_ptr_, col_ind_, nnz_, result);
 }
 
+void
+KernelMatrix::dns_csr_mul(const SyncArray<float_type> &dense_mat, int n_rows, float_type *result) const {
+    CHECK_EQ(dense_mat.size(), n_rows * n_features_) << "dense matrix features doesn't match";
+    svm_kernel::dns_csr_mul(n_instances_, n_rows, n_features_, dense_mat, val_, row_ptr_, col_ind_, nnz_, result);
+}
+
 void KernelMatrix::get_dot_product(const SyncArray<int> &idx, SyncArray<float_type> &dot_product) const {
     SyncArray<float_type> data_rows(idx.size() * n_features_);
     data_rows.mem_set(0);
     get_working_set_ins(val_, col_ind_, row_ptr_, idx, data_rows, idx.size());
     dns_csr_mul(data_rows, idx.size(), dot_product);
 }
+
+void KernelMatrix::get_dot_product(const SyncArray<int> &idx, float_type* dot_product) const {
+    SyncArray<float_type> data_rows(idx.size() * n_features_);
+    data_rows.mem_set(0);
+    get_working_set_ins(val_, col_ind_, row_ptr_, idx, data_rows, idx.size());
+    dns_csr_mul(data_rows, idx.size(), dot_product);
+}
+
+void KernelMatrix::get_dot_product(vector<int> &working_set_cal, float_type* dot_product) const {
+    SyncArray<float_type> data_rows(working_set_cal.size() * n_features_);
+    data_rows.mem_set(0);
+    get_working_set_ins(val_, col_ind_, row_ptr_, working_set_cal, data_rows, working_set_cal.size());
+    dns_csr_mul(data_rows, working_set_cal.size(), dot_product);
+}
+
 
 void KernelMatrix::get_dot_product(const DataSet::node2d &instances, SyncArray<float_type> &dot_product) const {
     SyncArray<float_type> dense_ins(instances.size() * n_features_);

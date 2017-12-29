@@ -28,6 +28,8 @@ public:
      * @param [out] kernel_rows
      */
     void get_rows(const SyncArray<int> &idx, SyncArray<float_type> &kernel_rows) const;
+    void get_rows(const SyncArray<int> &idx, float_type *kernel_rows, long k_mat_rows_size) const;
+    void get_rows(vector<int> &idx, float_type *kernel_rows, long k_mat_rows_size) const;
 
     /**
      * return kernel values of each given instance and each instance stored in KernelMatrix
@@ -64,7 +66,13 @@ private:
 
     void dns_csr_mul(const SyncArray<float_type> &dense_mat, int n_rows, SyncArray<float_type> &result) const;
 
+    void dns_csr_mul(const SyncArray<float_type> &dense_mat, int n_rows, float_type* result) const;
+
     void get_dot_product(const SyncArray<int> &idx, SyncArray<float_type> &dot_product) const;
+
+    void get_dot_product(const SyncArray<int> &idx, float_type* dot_product) const;
+
+    void get_dot_product(vector<int> &idx, float_type* dot_product) const;
 
     void get_dot_product(const DataSet::node2d &instances, SyncArray<float_type> &dot_product) const;
 };

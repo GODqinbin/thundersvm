@@ -4,12 +4,15 @@
 #include <thundersvm/solver/csmosolver.h>
 #include <thundersvm/kernel/smo_kernel.h>
 #include <limits.h>
+#include <hbwmalloc.h>
 using namespace svm_kernel;
+
+
+
 
 void
 CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<float_type> &alpha, float_type &rho,
                   SyncArray<float_type> &f_val, float_type eps, float_type Cp, float_type Cn, int ws_size) const {
-    TIMED_SCOPE(timerObj, "solve");
     int n_instances = k_mat.n_instances();
     int q = ws_size / 2;
 
@@ -29,16 +32,38 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
     SyncArray<float_type> alpha_diff(ws_size);
     SyncArray<float_type> diff(1);
 
-    SyncArray<float_type> k_mat_rows(ws_size * k_mat.n_instances());
-    SyncArray<float_type> k_mat_rows_first_half(q * k_mat.n_instances());
-    SyncArray<float_type> k_mat_rows_last_half(q * k_mat.n_instances());
-#ifdef USE_CUDA
-    k_mat_rows_first_half.set_device_data(k_mat_rows.device_data());
-    k_mat_rows_last_half.set_device_data(&k_mat_rows.device_data()[q * k_mat.n_instances()]);
-#else
-    k_mat_rows_first_half.set_host_data(k_mat_rows.host_data());
-    k_mat_rows_last_half.set_host_data(&k_mat_rows.host_data()[q * k_mat.n_instances()]);
-#endif
+
+    long cache_row_size = n_instances;
+    long cache_line_num;
+
+    long hbw_size = (long)16 * 1024 * 1024 * 1024;
+    long ws_kernel_size = ws_size * n_instances;
+    long k_mat_rows_size = ws_kernel_size * sizeof(float_type);
+    float_type *k_mat_rows;
+    float_type *kernel_record; //store high frequency used kernel value
+    if(k_mat_rows_size > hbw_size/4) {
+        k_mat_rows = (float_type *) malloc(k_mat_rows_size);
+        cache_line_num = hbw_size / (n_instances * sizeof(float_type));
+        kernel_record = (float_type *) hbw_malloc(cache_line_num * cache_row_size * sizeof(float_type));
+    }
+    else {
+        k_mat_rows = (float_type *) hbw_malloc(k_mat_rows_size);
+        cache_line_num = (hbw_size - k_mat_rows_size) / (n_instances * sizeof(float_type));
+        kernel_record = (float_type *) hbw_malloc(cache_line_num * cache_row_size * sizeof(float_type));
+    }
+    float_type *k_mat_rows_first_half = k_mat_rows;
+    float_type *k_mat_rows_last_half = k_mat_rows + ws_kernel_size / 2;
+
+    int *used_num = new int[n_instances]; //number of kernel row value being used
+    bool *in_cache = new bool[n_instances];//whether kernel row value in cache
+    int *cacheIndex = new int[n_instances];//index of kernel row value in kernel_record
+    int free_cache_index = 0;
+    bool cache_full = false;
+
+    memset(used_num, 0, sizeof(int) * n_instances);
+    memset(in_cache, 0, sizeof(bool) * n_instances);
+
+
     int *f_idx_data = f_idx.host_data();
     for (int i = 0; i < n_instances; ++i) {
         f_idx_data[i] = i;
@@ -46,6 +71,13 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
     init_f(alpha, y, k_mat, f_val);
     LOG(INFO) << "training start";
     int max_iter = max(100000, ws_size > INT_MAX / 100 ? INT_MAX : 100 * ws_size);
+    //vector<vector <int>> ins_rec(n_instances);
+    vector <int> working_set_cal_last_half;
+    SyncArray<int> working_set_cal_rank(ws_size);
+    int *working_set_data = working_set.host_data();
+    int *working_set_cal_rank_data = working_set_cal_rank.host_data();
+    //float *k_mat_rows_data = k_mat_rows.host_data();
+    vector <int> recal_first_half_kernel;
     for (int iter = 0;; ++iter) {
         //select working set
         f_idx2sort.copy_from(f_idx);
@@ -53,47 +85,128 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
         sort_f(f_val2sort, f_idx2sort);
         vector<int> ws_indicator(n_instances, 0);
         if (0 == iter) {
-            {
-		TIMED_SCOPE(timerObj, "select working set");
-		select_working_set(ws_indicator, f_idx2sort, y, alpha, Cp, Cn, working_set);
-	    }
-            {
-		TIMED_SCOPE(timerObj, "get rows");
-	    	k_mat.get_rows(working_set, k_mat_rows);
-	    }
+            select_working_set(ws_indicator, f_idx2sort, y, alpha, Cp, Cn, working_set);
+            k_mat.get_rows(working_set, k_mat_rows, ws_kernel_size);
+
+
+            smo_kernel(y, f_val, alpha, alpha_diff, working_set, Cp, Cn, k_mat_rows, k_mat.diag(), n_instances, eps,
+                       diff, max_iter);
+
+            //update f
+            update_f(f_val, alpha_diff, k_mat_rows, k_mat.n_instances());
+
+            for(int i = 0; i < ws_size; i++){
+                int wsi = working_set_data[i];
+                used_num[wsi]++;
+                if(free_cache_index == cache_line_num)
+                    cache_full = true;
+                if(cache_full){
+                    for(int j = 0; j < n_instances; j++){
+                        if((used_num[j] < used_num[wsi]) && in_cache[j]){
+                            in_cache[j] = false;
+                            memcpy(kernel_record + cacheIndex[j] * cache_row_size,
+                                   k_mat_rows + i * n_instances, n_instances * sizeof(float));
+                            in_cache[wsi] = true;
+                            cacheIndex[wsi] = cacheIndex[j];
+                            break;
+                        }
+                    }
+                }
+                else{
+                    memcpy(kernel_record + free_cache_index * cache_row_size,
+                           k_mat_rows + i * n_instances, n_instances * sizeof(float));
+                    in_cache[wsi] = true;
+                    cacheIndex[wsi] = free_cache_index;
+                    free_cache_index++;
+                }
+            }
+            for(int i = 0; i < ws_size; i++)
+                working_set_cal_rank_data[i] = i;
+
         } else {
             working_set_first_half.copy_from(working_set_last_half);
-            int *working_set_data = working_set.host_data();
+
             for (int i = 0; i < q; ++i) {
                 ws_indicator[working_set_data[i]] = 1;
             }
-            {
-		TIMED_SCOPE(timerObj, "select working set");
-		select_working_set(ws_indicator, f_idx2sort, y, alpha, Cp, Cn, working_set_last_half);
-	    }
-            k_mat_rows_first_half.copy_from(k_mat_rows_last_half);
-            {
-		TIMED_SCOPE(timerObj, "get rows");
-		k_mat.get_rows(working_set_last_half, k_mat_rows_last_half);
-	    }
+
+
+            select_working_set(ws_indicator, f_idx2sort, y, alpha, Cp, Cn, working_set_last_half);
+
+
+            int rank = 0;
+            int reuse_num_first_half = 0;
+            for(int i = 0; i < q; i++){
+                int last_half = working_set_cal_rank_data[i + q];
+                if(last_half != -1) {
+                    working_set_cal_rank_data[i] = last_half - q;
+                    reuse_num_first_half++;
+                }
+                else
+                    working_set_cal_rank_data[i] = -1;
+            }
+            //k_mat_rows_first_half.copy_from(k_mat_rows_last_half);
+            memcpy(k_mat_rows_first_half, k_mat_rows_last_half, ws_kernel_size / 2 * sizeof(float_type));
+
+            working_set_cal_last_half.clear();
+            rank = ws_size / 2;
+            for(int i = q; i < ws_size; i++){
+                if(in_cache[working_set_data[i]]){
+                    working_set_cal_rank_data[i] = -1;
+                }
+                else {
+                    working_set_cal_rank_data[i] = rank++;
+                    working_set_cal_last_half.push_back(working_set_data[i]);
+                }
+            }
+
+            k_mat.get_rows(working_set_cal_last_half, k_mat_rows_last_half, ws_kernel_size / 2);
+
+            //local smo
+            smo_kernel(y, f_val, alpha, alpha_diff, working_set, Cp, Cn, k_mat_rows, k_mat.diag(), n_instances, eps, diff,
+                       max_iter, cacheIndex, kernel_record, working_set_cal_rank_data);
+            //update f
+            update_f(f_val, alpha_diff, k_mat_rows, k_mat.n_instances(), kernel_record, working_set_cal_rank_data,
+                     cacheIndex, working_set_data);
+            for(int i = 0; i < ws_size; i++)
+                used_num[working_set_data[i]]++;
+            for(int i = q; i < ws_size; i++){
+                int wsi = working_set_data[i];
+                //used_num[wsi]++;
+                if(working_set_cal_rank_data[i] != -1){
+                    if(free_cache_index == cache_line_num)
+                        cache_full = true;
+                    if(cache_full){
+                        for(int j = 0; j < n_instances; j++){
+                            if(in_cache[j] && (used_num[j] < used_num[wsi])){
+                                in_cache[j] = false;
+                                memcpy(kernel_record + cacheIndex[j] * cache_row_size,
+                                       k_mat_rows + working_set_cal_rank_data[i] * n_instances,
+                                       n_instances * sizeof(float));
+                                in_cache[wsi] = true;
+                                cacheIndex[wsi] = cacheIndex[j];
+                                break;
+                            }
+                        }
+                    }
+                    else{
+                        memcpy(kernel_record + free_cache_index * cache_row_size,
+                               k_mat_rows + working_set_cal_rank_data[i] * n_instances,
+                               n_instances * sizeof(float));
+                        in_cache[wsi] = true;
+                        cacheIndex[wsi] = free_cache_index;
+                        free_cache_index++;
+                    }
+                }
+            }
         }
-        //local smo
-        {
-	TIMED_SCOPE(timerObj, "smo_kernel");
-	smo_kernel(y, f_val, alpha, alpha_diff, working_set, Cp, Cn, k_mat_rows, k_mat.diag(), n_instances, eps, diff,
-                   max_iter);
-	}
-        //update f
-        {
-	TIMED_SCOPE(timerObj, "update_f");
-        update_f(f_val, alpha_diff, k_mat_rows, k_mat.n_instances());
-        }
-	if (iter % 10 == 0) {
+        if (iter % 10 == 0) {
             printf(".");
             std::cout.flush();
         }
         if (diff.host_data()[0] < eps) {
             rho = calculate_rho(f_val, y, alpha, Cp, Cn);
+            std::cout<<"iter num:"<<iter<<std::endl;
             break;
         }
     }
@@ -204,3 +317,28 @@ CSMOSolver::smo_kernel(const SyncArray<int> &y, SyncArray<float_type> &f_val, Sy
     c_smo_solve(y, f_val, alpha, alpha_diff, working_set, Cp, Cn, k_mat_rows, k_mat_diag, row_len, eps, diff, max_iter);
 }
 
+void
+CSMOSolver::smo_kernel(const SyncArray<int> &y, SyncArray<float_type> &f_val, SyncArray<float_type> &alpha,
+                       SyncArray<float_type> &alpha_diff,
+                       const SyncArray<int> &working_set, float_type Cp, float_type Cn,
+                       float_type* k_mat_rows,
+                       const SyncArray<float_type> &k_mat_diag, int row_len, float_type eps,
+                       SyncArray<float_type> &diff,
+                       int max_iter) const {
+    c_smo_solve(y, f_val, alpha, alpha_diff, working_set, Cp, Cn, k_mat_rows, k_mat_diag, row_len, eps, diff, max_iter);
+}
+
+void
+CSMOSolver::smo_kernel(const SyncArray<int> &y, SyncArray<float_type> &f_val, SyncArray<float_type> &alpha,
+                       SyncArray<float_type> &alpha_diff,
+                       const SyncArray<int> &working_set, float_type Cp, float_type Cn,
+                       float_type* k_mat_rows,
+                       const SyncArray<float_type> &k_mat_diag, int row_len, float_type eps,
+                       SyncArray<float_type> &diff,
+                       int max_iter,
+                       int *cacheIndex,
+                       float *kernel_record,
+                       int* working_set_cal_rank_data) const {
+    c_smo_solve(y, f_val, alpha, alpha_diff, working_set, Cp, Cn, k_mat_rows, k_mat_diag, row_len, eps, diff, max_iter,
+                cacheIndex, kernel_record, working_set_cal_rank_data);
+}
