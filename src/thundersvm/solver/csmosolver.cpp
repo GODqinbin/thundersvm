@@ -48,7 +48,8 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
     int max_iter = max(100000, ws_size > INT_MAX / 100 ? INT_MAX : 100 * ws_size);
     for (int iter = 0;; ++iter) {
         //select working set
-        f_idx2sort.copy_from(f_idx);
+        std::cout<<"iter:"<<iter<<std::endl;
+	f_idx2sort.copy_from(f_idx);
         f_val2sort.copy_from(f_val);
         sort_f(f_val2sort, f_idx2sort);
         vector<int> ws_indicator(n_instances, 0);

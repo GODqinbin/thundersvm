@@ -142,7 +142,7 @@ namespace svm_kernel {
     void dns_csr_mul(int m, int n, int k, const SyncArray<float_type> &dense_mat, const SyncArray<float_type> &csr_val,
                      const SyncArray<int> &csr_row_ptr, const SyncArray<int> &csr_col_ind, int nnz,
                      SyncArray<float_type> &result) {
-
+	TIMED_SCOPE(timerObj, "dns csr mul");
         float alpha(1), beta(0);
         char transa = 'n';
         char matdesca[6];
