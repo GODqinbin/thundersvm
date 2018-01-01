@@ -208,6 +208,7 @@ namespace svm_kernel {
         float local_eps;
         int numOfIter = 0;
         while (1) {
+            /*
             //select fUp and fLow
             int i = 0;
             int j1 = 0;
@@ -226,6 +227,36 @@ namespace svm_kernel {
                         j1 = tid;
                     }
             }
+             */
+#ifdef SIMD_SMO
+#pragma omp simd
+#endif
+            //select fUp and fLow
+            for (int tid = 0; tid < ws_size; ++tid) {
+                int wsi = working_set[tid];
+                if (is_I_up(alpha[wsi], y[wsi], Cp, Cn))
+                    f_val2reduce[tid] = f[tid];
+                else
+                    f_val2reduce[tid] = INFINITY;
+            }
+            int i = get_min_idx(f_val2reduce, ws_size);
+            float up_value = f_val2reduce[i];
+
+#ifdef SIMD_SMO
+#pragma omp simd
+#endif
+
+            for (int tid = 0; tid < ws_size; ++tid) {
+                int wsi = working_set[tid];
+                if (is_I_low(alpha[wsi], y[wsi], Cp, Cn))
+                    f_val2reduce[tid] = -f[tid];
+                else
+                    f_val2reduce[tid] = INFINITY;
+            }
+            int j1 = get_min_idx(f_val2reduce, ws_size);
+            float low_value = -f_val2reduce[j1];
+
+
             int wsI = working_set[i];
             int wscri = working_set_cal_rank_data[i];
             if(working_set_cal_rank_data[i] == -1){
@@ -259,6 +290,7 @@ namespace svm_kernel {
                 diff[0] = local_diff;
                 break;
             }
+            /*
             int j2 = 0;
             float min_t = INFINITY;
             //select j2 using second order heuristic
@@ -274,7 +306,24 @@ namespace svm_kernel {
                     }
                 }
             }
+            */
 
+#ifdef SIMD_SMO
+#pragma omp simd
+#endif
+
+            //select j2 using second order heuristic
+            for (int tid = 0; tid < ws_size; ++tid) {
+                int wsi = working_set[tid];
+                if (-up_value > -f[tid] && (is_I_low(alpha[wsi], y[wsi], Cp, Cn))) {
+                    float aIJ = kd[i] + kd[tid] - 2 * kIwsI[tid];
+                    float bIJ = -up_value + f[tid];
+                    f_val2reduce[tid] = -bIJ * bIJ / aIJ;
+                } else
+                    f_val2reduce[tid] = INFINITY;
+            }
+            int j2 = get_min_idx(f_val2reduce, ws_size);
+            
             //update alpha
 //            if (tid == i)
             *alpha_i_diff = y[working_set[i]] > 0 ? Cp - alpha[working_set[i]] : alpha[working_set[i]];
