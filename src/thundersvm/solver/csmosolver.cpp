@@ -38,7 +38,8 @@ int n_instances = k_mat.n_instances();
     long cache_row_size = n_instances;
     long cache_line_num;
 
-    long hbw_size = (long)16 * 1024 * 1024 * 1024;
+    long hbw_size = (long)8 * 1024 * 1024 * 1024;
+    std::cout<<"size:"<<hbw_size<<std::endl;
     long ws_kernel_size = ws_size * n_instances;
     long k_mat_rows_size = ws_kernel_size * sizeof(float_type);
     float_type *k_mat_rows;
@@ -152,6 +153,9 @@ int n_instances = k_mat.n_instances();
 
             int rank = 0;
             int reuse_num_first_half = 0;
+
+            int numOfIn = q;
+
             for(int i = 0; i < q; i++){
                 int last_half = working_set_cal_rank_data[i + q];
                 if(last_half != -1) {
@@ -166,15 +170,21 @@ int n_instances = k_mat.n_instances();
 
             working_set_cal_last_half.clear();
             rank = ws_size / 2;
+            int first_off = 0;
             for(int i = q; i < ws_size; i++){
                 if(in_cache[working_set_data[i]]){
                     working_set_cal_rank_data[i] = -1;
+                    numOfIn++;
                 }
                 else {
+                    if(!first_off){
+                        first_off = i;
+                    }
                     working_set_cal_rank_data[i] = rank++;
                     working_set_cal_last_half.push_back(working_set_data[i]);
                 }
             }
+            std::cout<<"iter"<<iter<<":"<<(float_type)numOfIn/ws_size<<std::endl;
 	{
 		TIMED_SCOPE(timerObj, "get rows");
             k_mat.get_rows(working_set_cal_last_half, k_mat_rows_last_half, ws_kernel_size / 2);
@@ -193,8 +203,9 @@ int n_instances = k_mat.n_instances();
         }
 	{
 		TIMED_SCOPE(timerObj, "update cache");
-	    for(int i = 0; i < ws_size; i++)
+	        for(int i = 0; i < ws_size; i++)
                 used_num[working_set_data[i]]++;
+           /* 
             for(int i = q; i < ws_size; i++){
                 int wsi = working_set_data[i];
                 //used_num[wsi]++;
@@ -224,6 +235,69 @@ int n_instances = k_mat.n_instances();
                     }
                 }
             }
+          */   
+          
+	if(!cache_full){
+                int free_num = cache_line_num - free_cache_index;
+                //int load_num = min(free_num, working_set_cal_last_half.size());
+                if(free_num >  working_set_cal_last_half.size()){
+                    memcpy(kernel_record + free_cache_index * cache_row_size,
+                           k_mat_rows + working_set_cal_rank_data[first_off] * n_instances,
+                           working_set_cal_last_half.size() * n_instances * sizeof(float_type));
+                    //int free_off = 0;
+                    for(int i = 0; i < working_set_cal_last_half.size(); i++){
+                        int wsi = working_set_cal_last_half[i];
+                        in_cache[wsi] = true;
+                        cacheIndex[wsi] = free_cache_index;
+                        free_cache_index++;
+                    }
+                }
+                else{
+                    memcpy(kernel_record + free_cache_index * cache_row_size,
+                           k_mat_rows + working_set_cal_rank_data[first_off] * n_instances,
+                           free_num * n_instances * sizeof(float_type));
+                    for(int i = 0; i < free_num; i++){
+                        int wsi = working_set_cal_last_half[i];
+                        in_cache[wsi] = true;
+                        cacheIndex[wsi] = free_cache_index;
+                        free_cache_index++;
+                    }
+                    cache_full = true;
+                    for(int i = free_num; i < working_set_cal_last_half.size(); i++){
+                        int wsi = working_set_cal_last_half[i];
+                        for(int j = 0; j < n_instances; j++){
+                            if(in_cache[j] && (used_num[j] < used_num[wsi])){
+                                in_cache[j] = false;
+                                memcpy(kernel_record + cacheIndex[j] * cache_row_size,
+                                       k_mat_rows + working_set_cal_rank_data[i] * n_instances,
+                                       n_instances * sizeof(float));
+                                in_cache[wsi] = true;
+                                cacheIndex[wsi] = cacheIndex[j];
+                                break;
+                            }
+                        }
+                    }
+                }
+                //free_cache_index += load_num;
+            }
+            else{
+                for(int i = 0; i < working_set_cal_last_half.size(); i++){
+                    int wsi = working_set_cal_last_half[i];
+                    for(int j = 0; j < n_instances; j++){
+                        if(in_cache[j] && (used_num[j] < used_num[wsi])){
+                            in_cache[j] = false;
+                            memcpy(kernel_record + cacheIndex[j] * cache_row_size,
+                                   k_mat_rows + working_set_cal_rank_data[i] * n_instances,
+                                   n_instances * sizeof(float));
+                            in_cache[wsi] = true;
+                            cacheIndex[wsi] = cacheIndex[j];
+                            break;
+                        }
+                    }
+                }
+            }
+	
+
 	}
         }
         if (iter % 10 == 0) {
