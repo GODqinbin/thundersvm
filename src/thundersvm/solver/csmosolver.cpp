@@ -48,13 +48,13 @@ int n_instances = k_mat.n_instances();
     if(k_mat_rows_size > hbw_size/4) {
         k_mat_rows = (float_type *) malloc(k_mat_rows_size);
         cache_line_num = hbw_size / (n_instances * sizeof(float_type));
-//        cache_line_num = 5000;
+        //cache_line_num = ws_size * 10;
 	kernel_record = (float_type *) hbw_malloc(cache_line_num * cache_row_size * sizeof(float_type));
     }
     else {
         k_mat_rows = (float_type *) hbw_malloc(k_mat_rows_size);
         cache_line_num = (hbw_size - k_mat_rows_size) / (n_instances * sizeof(float_type));
-//        cache_line_num = 5000;
+        //cache_line_num = ws_size * 10;
 	kernel_record = (float_type *) hbw_malloc(cache_line_num * cache_row_size * sizeof(float_type));
     }
     float_type *k_mat_rows_first_half = k_mat_rows;
@@ -111,40 +111,84 @@ int n_instances = k_mat.n_instances();
 	}
 	{
 		TIMED_SCOPE(timerObj, "update cache");
+#pragma omp simd
         for(int i = 0; i < ws_size; i++)
             used_num[working_set_data[i]]++;
-            for(int i = 0; i < ws_size; i++){
-                int wsi = working_set_data[i];
 
-                if(free_cache_index == cache_line_num)
+//            for(int i = 0; i < ws_size; i++){
+//                int wsi = working_set_data[i];
+//
+//                if(free_cache_index == cache_line_num)
+//                    cache_full = true;
+//                if(cache_full){
+//                    for(int j = 0; j < n_instances; j++){
+//                        if((used_num[j] < used_num[wsi]) && in_cache[j]){
+//                            in_cache[j] = false;
+//                            memcpy(kernel_record + cacheIndex[j] * cache_row_size,
+//                                   k_mat_rows + i * n_instances, n_instances * sizeof(float));
+//                            in_cache[wsi] = true;
+//                            cacheIndex[wsi] = cacheIndex[j];
+//                            break;
+//                        }
+//                    }
+//                }
+//                else{
+//                    memcpy(kernel_record + free_cache_index * cache_row_size,
+//                           k_mat_rows + i * n_instances, n_instances * sizeof(float));
+//                    in_cache[wsi] = true;
+//                    cacheIndex[wsi] = free_cache_index;
+//                    free_cache_index++;
+//                }
+//            }
+                int free_num = cache_line_num;
+                //int load_num = min(free_num, working_set_cal_last_half.size());
+                if(free_num >  ws_size){
+#pragma omp parallel for
+                    for(int i = 0; i < ws_size; i++){
+                        memcpy(kernel_record + (free_cache_index + i) * cache_row_size,
+                               k_mat_rows + i * n_instances,
+                               n_instances * sizeof(float_type));
+                        int wsi = working_set_data[i];
+                        in_cache[wsi] = true;
+                        cacheIndex[wsi] = free_cache_index + i;
+                    }
+                    free_cache_index += ws_size;
+                }
+                else{
+#pragma omp parallel for
+                    for(int i = 0; i < free_num; i++){
+                        memcpy(kernel_record + (free_cache_index + i) * cache_row_size,
+                               k_mat_rows + i * n_instances,
+                               n_instances * sizeof(float_type));
+                        int wsi = working_set_data[i];
+                        in_cache[wsi] = true;
+                        cacheIndex[wsi] = free_cache_index + i;
+                    }
+                    free_cache_index += free_num;
                     cache_full = true;
-                if(cache_full){
-                    for(int j = 0; j < n_instances; j++){
-                        if((used_num[j] < used_num[wsi]) && in_cache[j]){
-                            in_cache[j] = false;
-                            memcpy(kernel_record + cacheIndex[j] * cache_row_size,
-                                   k_mat_rows + i * n_instances, n_instances * sizeof(float));
-                            in_cache[wsi] = true;
-                            cacheIndex[wsi] = cacheIndex[j];
-                            break;
+                    for(int i = free_num; i < ws_size; i++){
+                        int wsi = working_set_data[i];
+                        for(int j = 0; j < n_instances; j++){
+                            if(in_cache[j] && (used_num[j] < used_num[wsi])){
+                                in_cache[j] = false;
+                                memcpy(kernel_record + cacheIndex[j] * cache_row_size,
+                                       k_mat_rows + i * n_instances,
+                                       n_instances * sizeof(float));
+                                in_cache[wsi] = true;
+                                cacheIndex[wsi] = cacheIndex[j];
+                                break;
+                            }
                         }
                     }
                 }
-                else{
-                    memcpy(kernel_record + free_cache_index * cache_row_size,
-                           k_mat_rows + i * n_instances, n_instances * sizeof(float));
-                    in_cache[wsi] = true;
-                    cacheIndex[wsi] = free_cache_index;
-                    free_cache_index++;
-                }
-            }
 	}
+#pragma omp simd
             for(int i = 0; i < ws_size; i++)
                 working_set_cal_rank_data[i] = i;
 
         } else {
             working_set_first_half.copy_from(working_set_last_half);
-
+#pragma omp simd
             for (int i = 0; i < q; ++i) {
                 ws_indicator[working_set_data[i]] = 1;
             }
@@ -158,7 +202,7 @@ int n_instances = k_mat.n_instances();
             //int reuse_num_first_half = 0;
 
             int numOfIn = q;
-
+#pragma omp simd
             for(int i = 0; i < q; i++){
                 int last_half = working_set_cal_rank_data[i + q];
                 if(last_half != -1) {
@@ -207,40 +251,41 @@ int n_instances = k_mat.n_instances();
             //LOG(INFO)<<"f:"<<f_val;
 	{
 		TIMED_SCOPE(timerObj, "update cache");
+#pragma omp simd
 	        for(int i = 0; i < ws_size; i++)
                 used_num[working_set_data[i]]++;
 
-            for(int i = q; i < ws_size; i++){
-                int wsi = working_set_data[i];
-                //used_num[wsi]++;
-                if(working_set_cal_rank_data[i] != -1){
-                    if(free_cache_index == cache_line_num)
-                        cache_full = true;
-                    if(cache_full){
-                        for(int j = 0; j < n_instances; j++){
-                            if(in_cache[j] && (used_num[j] < used_num[wsi])){
-                                in_cache[j] = false;
-                                memcpy(kernel_record + cacheIndex[j] * cache_row_size,
-                                       k_mat_rows + working_set_cal_rank_data[i] * n_instances,
-                                       n_instances * sizeof(float));
-                                in_cache[wsi] = true;
-                                cacheIndex[wsi] = cacheIndex[j];
-                                break;
-                            }
-                        }
-                    }
-                    else{
-                        memcpy(kernel_record + free_cache_index * cache_row_size,
-                               k_mat_rows + working_set_cal_rank_data[i] * n_instances,
-                               n_instances * sizeof(float));
-                        in_cache[wsi] = true;
-                        cacheIndex[wsi] = free_cache_index;
-                        free_cache_index++;
-                    }
-                }
-            }
+//            for(int i = q; i < ws_size; i++){
+//                int wsi = working_set_data[i];
+//                //used_num[wsi]++;
+//                if(working_set_cal_rank_data[i] != -1){
+//                    if(free_cache_index == cache_line_num)
+//                        cache_full = true;
+//                    if(cache_full){
+//                        for(int j = 0; j < n_instances; j++){
+//                            if(in_cache[j] && (used_num[j] < used_num[wsi])){
+//                                in_cache[j] = false;
+//                                memcpy(kernel_record + cacheIndex[j] * cache_row_size,
+//                                       k_mat_rows + working_set_cal_rank_data[i] * n_instances,
+//                                       n_instances * sizeof(float));
+//                                in_cache[wsi] = true;
+//                                cacheIndex[wsi] = cacheIndex[j];
+//                                break;
+//                            }
+//                        }
+//                    }
+//                    else{
+//                        memcpy(kernel_record + free_cache_index * cache_row_size,
+//                               k_mat_rows + working_set_cal_rank_data[i] * n_instances,
+//                               n_instances * sizeof(float));
+//                        in_cache[wsi] = true;
+//                        cacheIndex[wsi] = free_cache_index;
+//                        free_cache_index++;
+//                    }
+//                }
+//            }
 
-        /*
+
         int wsclh_size = working_set_cal_last_half.size();
             if(!cache_full){
                 int free_num = cache_line_num - free_cache_index;
@@ -273,7 +318,7 @@ int n_instances = k_mat.n_instances();
                     free_cache_index += wsclh_size;
                 }
                 else{
-                    std::cout<<"fulling"<<std::endl;
+                    //std::cout<<"fulling"<<std::endl;
 #pragma omp parallel for
                     for(int i = 0; i < free_num; i++){
                         memcpy(kernel_record + (free_cache_index + i) * cache_row_size,
@@ -340,7 +385,7 @@ int n_instances = k_mat.n_instances();
                     }
                 }
             }
-            */
+
 
 	}
         }
