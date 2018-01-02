@@ -232,6 +232,7 @@ int n_instances = k_mat.n_instances();
                 }
             }
             std::cout<<"iter"<<iter<<":"<<(float_type)numOfIn/ws_size<<std::endl;
+            std::cout<<"size:"<<working_set_cal_last_half.size()<<std::endl;
 	{
 		TIMED_SCOPE(timerObj, "get rows");
             k_mat.get_rows(working_set_cal_last_half, k_mat_rows_last_half, ws_kernel_size / 2);
