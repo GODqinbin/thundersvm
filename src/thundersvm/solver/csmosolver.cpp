@@ -231,8 +231,8 @@ int n_instances = k_mat.n_instances();
                     working_set_cal_last_half.push_back(working_set_data[i]);
                 }
             }
-            std::cout<<"iter"<<iter<<":"<<(float_type)numOfIn/ws_size<<std::endl;
-            std::cout<<"size:"<<working_set_cal_last_half.size()<<std::endl;
+    //        std::cout<<"iter"<<iter<<":"<<(float_type)numOfIn/ws_size<<std::endl;
+    //        std::cout<<"size:"<<working_set_cal_last_half.size()<<std::endl;
             if(working_set_cal_last_half.size())
 	{
 		TIMED_SCOPE(timerObj, "get rows");
@@ -364,7 +364,7 @@ int n_instances = k_mat.n_instances();
                 //free_cache_index += load_num;
             }
             else{
-                std::cout<<"fulled"<<std::endl;
+    //            std::cout<<"fulled"<<std::endl;
 #pragma omp parallel for schedule(guided)
                 for(int i = 0; i < wsclh_size; i++){
                     int wsi = working_set_cal_last_half[i];
