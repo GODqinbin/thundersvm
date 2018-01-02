@@ -95,7 +95,8 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
         }
         if (diff.host_data()[0] < eps) {
             rho = calculate_rho(f_val, y, alpha, Cp, Cn);
-            break;
+        std::cout<<"iter num:"<<iter<<std::endl;    
+	break;
         }
     }
     printf("\n");

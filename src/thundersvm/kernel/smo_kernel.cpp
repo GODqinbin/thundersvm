@@ -369,7 +369,7 @@ namespace svm_kernel {
         for (int idx = 0; idx < n_instances; ++idx) {
             float_type sum_diff = 0;
 //#pragma omp parallel for reduction(+:sum_diff)
-//#pragma omp simd reduction(+:sum_diff)
+#pragma omp simd reduction(+:sum_diff)
             for (int i = 0; i < alpha_diff.size(); ++i) {
 //		sum_diff += alpha_diff_data[i] * k_mat_rows_data[i * n_instances + idx];
                 float_type d = alpha_diff_data[i];
