@@ -45,17 +45,20 @@ int n_instances = k_mat.n_instances();
     long k_mat_rows_size = ws_kernel_size * sizeof(float_type);
     float_type *k_mat_rows;
     float_type *kernel_record; //store high frequency used kernel value
+    int m_case;
     if(k_mat_rows_size > hbw_size/4) {
         k_mat_rows = (float_type *) malloc(k_mat_rows_size);
         cache_line_num = hbw_size / (n_instances * sizeof(float_type));
         //cache_line_num = ws_size * 10;
 	kernel_record = (float_type *) hbw_malloc(cache_line_num * cache_row_size * sizeof(float_type));
+    	m_case = 0;
     }
     else {
         k_mat_rows = (float_type *) hbw_malloc(k_mat_rows_size);
         cache_line_num = (hbw_size - k_mat_rows_size) / (n_instances * sizeof(float_type));
         //cache_line_num = ws_size * 10;
 	kernel_record = (float_type *) hbw_malloc(cache_line_num * cache_row_size * sizeof(float_type));
+	m_case = 1;
     }
     float_type *k_mat_rows_first_half = k_mat_rows;
     float_type *k_mat_rows_last_half = k_mat_rows + ws_kernel_size / 2;
@@ -402,6 +405,14 @@ int n_instances = k_mat.n_instances();
         }
     }
     printf("\n");
+    if(m_case){
+	hbw_free(k_mat_rows);
+	hbw_free(kernel_record);
+    }
+    else{
+	free(k_mat_rows);
+	hbw_free(kernel_record);
+    }
 }
 
 void
