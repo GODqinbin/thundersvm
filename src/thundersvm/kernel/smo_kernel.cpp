@@ -3,7 +3,8 @@
 // Created by jiashuai on 17-11-7.
 //
 
-
+//#include <tbb/parallel_sort.h>
+#include <tbb/tbb.h>
 #include <thundersvm/kernel/smo_kernel.h>
 #include <omp.h>
 #define SIMD_SMO
@@ -655,7 +656,12 @@ namespace svm_kernel {
         for (int i = 0; i < f_val2sort.size(); ++i) {
             paris.emplace_back(f_val2sort_data[i], f_idx2sort_data[i]);
         }
-        std::sort(paris.begin(), paris.end());
+//        std::sort(paris.begin(), paris.end());
+//tbb::task_scheduler_init init(64);
+tbb::parallel_sort(paris.begin(), paris.end(), [=]( const std::pair< float_type, int >&a, const std::pair< float_type, int >&b )
+                                          {
+                                                return a.first < b.first;
+                                          });
         for (int i = 0; i < f_idx2sort.size(); ++i) {
             f_idx2sort_data[i] = paris[i].second;
         }

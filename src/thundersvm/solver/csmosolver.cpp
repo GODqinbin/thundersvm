@@ -89,11 +89,19 @@ int n_instances = k_mat.n_instances();
     int *working_set_cal_rank_data = working_set_cal_rank.host_data();
     //float *k_mat_rows_data = k_mat_rows.host_data();
     vector <int> recal_first_half_kernel;
+//    float_type *f_idx2sort_data = f_idx2sort.host_data();
+//    float_type *f_val2sort_data = f_val2sort.host_data();
     for (int iter = 0;; ++iter) {
         //select working set
+{
+	TIMED_SCOPE(timerObj, "f copy");
         f_idx2sort.copy_from(f_idx);
         f_val2sort.copy_from(f_val);
+}
+{
+TIMED_SCOPE(timerObj, "f sort");
         sort_f(f_val2sort, f_idx2sort);
+}
         vector<int> ws_indicator(n_instances, 0);
         if (0 == iter) {
 	{
@@ -202,7 +210,8 @@ int n_instances = k_mat.n_instances();
 		TIMED_SCOPE(timerObj, "select working set");
             select_working_set(ws_indicator, f_idx2sort, y, alpha, Cp, Cn, working_set_last_half);
 	}
-
+{
+	TIMED_SCOPE(timerObj, "ws&kv setup");
             int rank = 0;
             //int reuse_num_first_half = 0;
 
@@ -218,9 +227,12 @@ int n_instances = k_mat.n_instances();
                     working_set_cal_rank_data[i] = -1;
             }
             //k_mat_rows_first_half.copy_from(k_mat_rows_last_half);
+{
+	TIMED_SCOPE(timerObj, "kv copy");
 #pragma omp parallel for
             for(int i = 0; i < ws_size / 2; i++)
 		memcpy(k_mat_rows_first_half + i * n_instances, k_mat_rows_last_half + i * n_instances, n_instances * sizeof(float_type));   
+}
 	//memcpy(k_mat_rows_first_half, k_mat_rows_last_half, ws_kernel_size / 2 * sizeof(float_type));
 
             working_set_cal_last_half.clear();
@@ -236,9 +248,11 @@ int n_instances = k_mat.n_instances();
                         first_off = i;
                     }
                     working_set_cal_rank_data[i] = rank++;
-                    working_set_cal_last_half.push_back(working_set_data[i]);
+                    working_set_cal_last_half.emplace_back(working_set_data[i]);
+                   // working_set_cal_last_half.push_back(working_set_data[i]);
                 }
             }
+}
     //        std::cout<<"iter"<<iter<<":"<<(float_type)numOfIn/ws_size<<std::endl;
     //        std::cout<<"size:"<<working_set_cal_last_half.size()<<std::endl;
             if(working_set_cal_last_half.size())
@@ -405,7 +419,7 @@ int n_instances = k_mat.n_instances();
         }
         if (diff.host_data()[0] < eps) {
             rho = calculate_rho(f_val, y, alpha, Cp, Cn);
-            std::cout<<"iter num:"<<iter<<std::endl;
+        //    std::cout<<"iter num:"<<iter<<std::endl;
             break;
         }
     }

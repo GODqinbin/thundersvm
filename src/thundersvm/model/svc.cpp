@@ -147,6 +147,7 @@ void SVC::train_binary(const DataSet &dataset, int i, int j, SyncArray<float_typ
 }
 
 vector<float_type> SVC::predict(const DataSet::node2d &instances, int batch_size) {
+    TIMED_SCOPE(timerObj, "predict");
     SyncArray<float_type> dec_values(instances.size() * n_binary_models);
     predict_dec_values(instances, dec_values, batch_size);
     return predict_label(dec_values, instances.size());
