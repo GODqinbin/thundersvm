@@ -218,7 +218,10 @@ int n_instances = k_mat.n_instances();
                     working_set_cal_rank_data[i] = -1;
             }
             //k_mat_rows_first_half.copy_from(k_mat_rows_last_half);
-            memcpy(k_mat_rows_first_half, k_mat_rows_last_half, ws_kernel_size / 2 * sizeof(float_type));
+#pragma omp parallel for
+            for(int i = 0; i < ws_size / 2; i++)
+		memcpy(k_mat_rows_first_half + i * n_instances, k_mat_rows_last_half + i * n_instances, n_instances * sizeof(float_type));   
+	//memcpy(k_mat_rows_first_half, k_mat_rows_last_half, ws_kernel_size / 2 * sizeof(float_type));
 
             working_set_cal_last_half.clear();
             rank = ws_size / 2;
