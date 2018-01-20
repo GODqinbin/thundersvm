@@ -39,7 +39,7 @@ int n_instances = k_mat.n_instances();
     long cache_row_size = n_instances;
     long cache_line_num;
 
-    long hbw_size = (long)8 * 1024 * 1024 * 1024;
+    long hbw_size = (long)16 * 1024 * 1024 * 1024;
     std::cout<<"size:"<<hbw_size<<std::endl;
     long ws_kernel_size = ws_size * n_instances;
     long k_mat_rows_size = ws_kernel_size * sizeof(float_type);
@@ -78,6 +78,8 @@ int n_instances = k_mat.n_instances();
         f_idx_data[i] = i;
     }
     init_f(alpha, y, k_mat, f_val);
+{
+	TIMED_SCOPE(timerObj, "train record time");
     LOG(INFO) << "training start";
     int max_iter = max(100000, ws_size > INT_MAX / 100 ? INT_MAX : 100 * ws_size);
     //vector<vector <int>> ins_rec(n_instances);
@@ -404,6 +406,7 @@ int n_instances = k_mat.n_instances();
             break;
         }
     }
+    
     printf("\n");
     if(m_case){
 	hbw_free(k_mat_rows);
@@ -412,6 +415,7 @@ int n_instances = k_mat.n_instances();
     else{
 	free(k_mat_rows);
 	hbw_free(kernel_record);
+    }
     }
 }
 
