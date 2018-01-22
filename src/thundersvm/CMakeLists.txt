@@ -20,5 +20,5 @@ else ()
     add_executable(${PROJECT_NAME}-predict thundersvm-predict.cpp ${SRC} ${COMMON_INCLUDES})
 endif ()
 
-target_link_libraries(${PROJECT_NAME}-train ${LINK_LIBRARY})
-target_link_libraries(${PROJECT_NAME}-predict ${LINK_LIBRARY})
+target_link_libraries(${PROJECT_NAME}-train ${LINK_LIBRARY} tbb)
+target_link_libraries(${PROJECT_NAME}-predict ${LINK_LIBRARY} tbb)

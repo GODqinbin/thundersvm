@@ -40,18 +40,28 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
     k_mat_rows_last_half.set_host_data(&k_mat_rows.host_data()[q * k_mat.n_instances()]);
 #endif
     int *f_idx_data = f_idx.host_data();
+    float_type *k_mat_rows_first_half_data = k_mat_rows_first_half.host_data();
+    float_type *k_mat_rows_last_half_data = k_mat_rows_last_half.host_data();
     for (int i = 0; i < n_instances; ++i) {
         f_idx_data[i] = i;
     }
     init_f(alpha, y, k_mat, f_val);
     LOG(INFO) << "training start";
+{
+	TIMED_SCOPE(timerObj, "train record time");
     int max_iter = max(100000, ws_size > INT_MAX / 100 ? INT_MAX : 100 * ws_size);
     for (int iter = 0;; ++iter) {
         //select working set
         std::cout<<"iter:"<<iter<<std::endl;
+{
+	TIMED_SCOPE(timerObj, "f copy");
 	f_idx2sort.copy_from(f_idx);
         f_val2sort.copy_from(f_val);
+}
+{
+	TIMED_SCOPE(timerObj, "sort f");
         sort_f(f_val2sort, f_idx2sort);
+}
         vector<int> ws_indicator(n_instances, 0);
         if (0 == iter) {
             {
@@ -72,7 +82,13 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
 		TIMED_SCOPE(timerObj, "select working set");
 		select_working_set(ws_indicator, f_idx2sort, y, alpha, Cp, Cn, working_set_last_half);
 	    }
-            k_mat_rows_first_half.copy_from(k_mat_rows_last_half);
+ //           k_mat_rows_first_half.copy_from(k_mat_rows_last_half);
+{
+	TIMED_SCOPE(timerObj, "kv copy");
+#pragma omp parallel for
+            for(int i = 0; i < ws_size / 2; i++)
+		memcpy(k_mat_rows_first_half_data + i * n_instances, k_mat_rows_last_half_data + i * n_instances, n_instances * sizeof(float_type));   
+}
             {
 		TIMED_SCOPE(timerObj, "get rows");
 		k_mat.get_rows(working_set_last_half, k_mat_rows_last_half);
@@ -99,6 +115,7 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
 	break;
         }
     }
+}
     printf("\n");
 }
 
