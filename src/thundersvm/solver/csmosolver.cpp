@@ -199,7 +199,7 @@ TIMED_SCOPE(timerObj, "f sort");
                         miss_num++;
 			int wsi = working_set_data[i];
                         for(int j = 0; j < n_instances; j++){
-                            if(in_cache[j] && (used_num[j] < used_num[wsi])){
+                            if(in_cache[j] && (used_num[j] < used_num[wsi]) && (in_choose[j] == 0)){
                                 in_cache[j] = false;
                                 copy_num++;
 				memcpy(kernel_record + cacheIndex[j] * cache_row_size,
