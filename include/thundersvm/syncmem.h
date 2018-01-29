@@ -12,8 +12,8 @@ namespace thunder {
 #ifdef USE_CUDA
         CUDA_CHECK(cudaMallocHost(ptr, size));
 #else
-        *ptr = malloc(size);
-	//*ptr = hbw_malloc(size);
+//        *ptr = malloc(size);
+	*ptr = hbw_malloc(size);
 #endif
     }
 
@@ -21,8 +21,8 @@ namespace thunder {
 #ifdef USE_CUDA
         CUDA_CHECK(cudaFreeHost(ptr));
 #else
-        //hbw_free(ptr);
-	free(ptr);
+        hbw_free(ptr);
+//	free(ptr);
 #endif
     }
 
