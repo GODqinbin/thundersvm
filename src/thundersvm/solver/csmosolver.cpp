@@ -172,7 +172,7 @@ TIMED_SCOPE(timerObj, "f sort");
                 int free_num = cache_line_num;
                 //int load_num = min(free_num, working_set_cal_last_half.size());
                 if(free_num >  ws_size){
-#pragma omp parallel
+#pragma omp parallel for
                     for(int i = 0; i < ws_size; i++){
                         //miss_num++;
 			//copy_num++;
@@ -186,7 +186,7 @@ TIMED_SCOPE(timerObj, "f sort");
                     free_cache_index += ws_size;
                 }
                 else{
-#pragma omp parallel
+#pragma omp parallel for
                     for(int i = 0; i < free_num; i++){
                         //miss_num++;
 			//copy_num++;
