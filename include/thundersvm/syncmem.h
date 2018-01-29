@@ -6,13 +6,14 @@
 #define THUNDERSVM_SYNCMEM_H
 
 #include <thundersvm/thundersvm.h>
-
+#include <hbwmalloc.h>
 namespace thunder {
     inline void malloc_host(void **ptr, size_t size) {
 #ifdef USE_CUDA
         CUDA_CHECK(cudaMallocHost(ptr, size));
 #else
         *ptr = malloc(size);
+	//*ptr = hbw_malloc(size);
 #endif
     }
 
@@ -20,7 +21,8 @@ namespace thunder {
 #ifdef USE_CUDA
         CUDA_CHECK(cudaFreeHost(ptr));
 #else
-        free(ptr);
+        //hbw_free(ptr);
+	free(ptr);
 #endif
     }
 

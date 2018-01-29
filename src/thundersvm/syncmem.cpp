@@ -3,7 +3,7 @@
 //
 
 #include <thundersvm/syncmem.h>
-
+#include <hbwmalloc.h>
 namespace thunder {
     SyncMem::SyncMem() : device_ptr(nullptr), host_ptr(nullptr), size_(0), head_(UNINITIALIZED), own_device_data(false),
                          own_host_data(false) {
@@ -19,7 +19,8 @@ namespace thunder {
         this->head_ = UNINITIALIZED;
         if (host_ptr && own_host_data) {
             free_host(host_ptr);
-            host_ptr = nullptr;
+            //hbw_free(host_ptr);
+		host_ptr = nullptr;
         }
 #ifdef USE_CUDA
         if (device_ptr && own_device_data) {
@@ -55,7 +56,8 @@ namespace thunder {
         switch (head_) {
             case UNINITIALIZED:
                 malloc_host(&host_ptr, size_);
-                memset(host_ptr, 0, size_);
+                //host_ptr = hbw_malloc(size_);
+		memset(host_ptr, 0, size_);
                 head_ = HOST;
                 own_host_data = true;
                 break;
@@ -105,7 +107,8 @@ namespace thunder {
         CHECK_NOTNULL(data);
         if (own_host_data) {
             free_host(host_ptr);
-        }
+            //hbw_free(host_ptr);
+	}
         host_ptr = data;
         own_host_data = false;
         head_ = HEAD::HOST;

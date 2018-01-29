@@ -6,6 +6,7 @@
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
 #include <mkl.h>
+#include <hbwmalloc.h>
 namespace svm_kernel {
     void
     get_working_set_ins(const SyncArray<float_type> &val, const SyncArray<int> &col_ind, const SyncArray<int> &row_ptr,
@@ -264,6 +265,7 @@ namespace svm_kernel {
                      const SyncArray<int> &csr_row_ptr, const SyncArray<int> &csr_col_ind, int nnz,
                      float_type* result) {
 
+
         float alpha(1), beta(0);
         char transa = 'n';
         char matdesca[6];
@@ -273,6 +275,7 @@ namespace svm_kernel {
         matdesca[3] = 'c';
 //        PERFORMANCE_CHECKPOINT_WITH_ID(timerObj, "1");
         float_type *kernel = new float_type[m * n];
+	//float_type *kernel = (float_type *)hbw_malloc(m * n * sizeof(float_type));
 //        PERFORMANCE_CHECKPOINT_WITH_ID(timerObj, "2");
         const float_type *val = csr_val.host_data();
         const int *col_ind = csr_col_ind.host_data();
@@ -293,6 +296,7 @@ namespace svm_kernel {
         mkl_somatcopy('r', 't', m, n, 1, kernel, n, result, m);
 //        PERFORMANCE_CHECKPOINT_WITH_ID(timerObj, "5");
         delete[] kernel;
+	//hbw_free(kernel);
 
 
 /*
@@ -302,7 +306,7 @@ namespace svm_kernel {
                                                                                 csr_val.host_data());
         Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic> dense_tran = denseMat.transpose();
         Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor> retMat = sparseMat * dense_tran;
-        Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor> >(result.host_data(),
+        Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor>>(result,
                 retMat.rows(),
                 retMat.cols()) = retMat;
 */
