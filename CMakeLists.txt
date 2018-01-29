@@ -16,7 +16,7 @@ endif ()
 find_package(Threads REQUIRED)
 find_package(OpenMP REQUIRED)
 
-list(APPEND CMAKE_MODULE_PATH "/home/h/haofu/qinbin/thundersvm")
+list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR})
 find_package(TBB REQUIRED)
 if (OPENMP_FOUND)
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
