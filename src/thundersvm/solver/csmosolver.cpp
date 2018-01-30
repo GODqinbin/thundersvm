@@ -7,7 +7,7 @@
 #include <hbwmalloc.h>
 #include <omp.h>
 using namespace svm_kernel;
-
+//#define USE_HBW
 
 
 
@@ -47,13 +47,20 @@ int n_instances = k_mat.n_instances();
     float_type *kernel_record; //store high frequency used kernel value
 //    int m_case;
 //    if(k_mat_rows_size > hbw_size/4) {
+#ifdef USE_HBW
         k_mat_rows = (float_type *) hbw_malloc(k_mat_rows_size);
+#else
+        k_mat_rows = (float_type *) malloc(k_mat_rows_size);
+#endif
         cache_line_num = hbw_size / (n_instances * sizeof(float_type));
 //	cache_line_num = 6000;    
 //std::cout<<"cache line num"<<cache_line_num<<std::endl;
-	//cache_line_num = ws_size * 10;
-//	kernel_record = (float_type *) hbw_malloc(cache_line_num * cache_row_size * sizeof(float_type));
+//	cache_line_num = ws_size * 10;
+#ifdef USE_HBW
+	kernel_record = (float_type *) hbw_malloc(cache_line_num * cache_row_size * sizeof(float_type));
+#else
 	kernel_record = (float_type *) malloc(cache_line_num * cache_row_size * sizeof(float_type));
+#endif
 //    	m_case = 0;
 //    }
 /*
@@ -67,17 +74,20 @@ int n_instances = k_mat.n_instances();
 */
     float_type *k_mat_rows_first_half = k_mat_rows;
     float_type *k_mat_rows_last_half = k_mat_rows + ws_kernel_size / 2;
-
+#ifdef USE_HBW
 	int *used_num = (int *) hbw_malloc(n_instances * sizeof(int));
 	bool *in_cache = (bool *) hbw_malloc(n_instances * sizeof(bool));
 	int *cacheIndex = (int *) hbw_malloc(n_instances * sizeof(int));
 	bool *in_choose = (bool *) hbw_malloc(n_instances * sizeof(bool));
-//    int *used_num = new int[n_instances]; //number of kernel row value being used
-//    bool *in_cache = new bool[n_instances];//whether kernel row value in cache
-//    int *cacheIndex = new int[n_instances];//index of kernel row value in kernel_record
+#else
+
+    int *used_num = new int[n_instances]; //number of kernel row value being used
+    bool *in_cache = new bool[n_instances];//whether kernel row value in cache
+    int *cacheIndex = new int[n_instances];//index of kernel row value in kernel_record
+    bool *in_choose = new bool[n_instances];
+#endif
     int free_cache_index = 0;
     bool cache_full = false;
-//    bool *in_choose = new bool[n_instances];
     memset(in_choose, 0, sizeof(bool) * n_instances);
 
 	//int hit_num = 0;
@@ -463,17 +473,23 @@ TIMED_SCOPE(timerObj, "f sort");
     }
 */
 //    else{
-//	delete[] used_num;
-//	delete[] in_cache;
-//	delete[] cacheIndex;
-//	delete[] in_choose;
+#ifdef USE_HBW
 	hbw_free(used_num);
 	hbw_free(in_cache);
 	hbw_free(cacheIndex);
 	hbw_free(in_choose);
 	hbw_free(k_mat_rows);
-//	hbw_free(kernel_record);
+	hbw_free(kernel_record);
+#else
+	delete[] used_num;
+	delete[] in_cache;
+	delete[] cacheIndex;
+	delete[] in_choose;
+	free(k_mat_rows);
 	free(kernel_record);
+#endif
+
+
 //    }
     }
 	//std::cout<<"hit num:"<<hit_num<<std::endl;
