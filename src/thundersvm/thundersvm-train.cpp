@@ -63,7 +63,8 @@ int main(int argc, char **argv) {
             predict_y = model->cross_validation(train_dataset, parser.param_cmd, parser.nr_fold);
         } else {
             model->train(train_dataset, parser.param_cmd);
-            model->save_to_file(parser.model_file_name);
+        return 0;    
+	model->save_to_file(parser.model_file_name);
             predict_y = model->predict(train_dataset.instances(), 10000);
         }
 

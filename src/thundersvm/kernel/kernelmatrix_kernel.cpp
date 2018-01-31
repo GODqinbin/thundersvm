@@ -2,6 +2,7 @@
 // Created by jiashuai on 17-11-7.
 //
 //#define USE_PARA
+#define USE_HBW
 #include <thundersvm/kernel/kernelmatrix_kernel.h>
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
@@ -230,8 +231,11 @@ namespace svm_kernel {
         matdesca[2] = 'n';
         matdesca[3] = 'c';
 //        PERFORMANCE_CHECKPOINT_WITH_ID(timerObj, "1");
-//        float_type *kernel = new float_type[m * n];
+#ifdef USE_HBW
 	float_type *kernel = (float_type *)hbw_malloc(m * n * sizeof(float_type));
+#else
+        float_type *kernel = new float_type[m * n];
+#endif
 //        PERFORMANCE_CHECKPOINT_WITH_ID(timerObj, "2");
         const float_type *val = csr_val.host_data();
         const int *col_ind = csr_col_ind.host_data();
@@ -246,9 +250,11 @@ namespace svm_kernel {
 //        PERFORMANCE_CHECKPOINT_WITH_ID(timerObj, "4");
         mkl_somatcopy('r', 't', m, n, 1, kernel, n, re, m);
 //        PERFORMANCE_CHECKPOINT_WITH_ID(timerObj, "5");
-//        delete[] kernel;
+#ifdef USE_HBW
 	hbw_free(kernel);
-
+#else
+        delete[] kernel;
+#endif
 /*
         Eigen::Map<const Eigen::MatrixXf> denseMat(dense_mat.host_data(), n, k);
         Eigen::Map<const Eigen::SparseMatrix<float, Eigen::RowMajor>> sparseMat(m, k, nnz, csr_row_ptr.host_data(),
