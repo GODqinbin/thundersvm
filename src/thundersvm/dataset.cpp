@@ -3,7 +3,7 @@
 //
 #include "thundersvm/dataset.h"
 #include <omp.h>
-#include <string>
+
 using std::fstream;
 using std::stringstream;
 
@@ -11,203 +11,95 @@ DataSet::DataSet() : total_count_(0), n_features_(0) {}
 
 DataSet::DataSet(const DataSet::node2d &instances, int n_features, const vector<float_type> &y) :
         instances_(instances), n_features_(n_features), y_(y), total_count_(instances_.size()) {}
-/*
+
+inline char *findlastline(char *ptr, char *begin) {
+    while (ptr != begin && *ptr != '\n' && *ptr != '\r') --ptr;
+    return ptr;
+}
+
 void DataSet::load_from_file(string file_name) {
-    struct timeval t1,t2;
-    double timeuse;
-    gettimeofday(&t1,NULL);
+    LOG(INFO)<<"loading dataset from file \""<<file_name<<"\"";
     y_.clear();
     instances_.clear();
     total_count_ = 0;
     n_features_ = 0;
-    fstream file;
-    file.open(file_name, fstream::in);
-    CHECK(file.is_open()) << "file " << file_name << " not found";
-    string line;
-
-    while (getline(file, line)) {
-        float_type y;
-        int i;
-        float_type v;
-        stringstream ss(line);
-        ss >> y;
-        this->y_.push_back(y);
-        this->instances_.emplace_back();//reserve space for an instance
-        string tuple;
-        while (ss >> tuple) {
-            CHECK_EQ(sscanf(tuple.c_str(), "%d:%f", &i, &v), 2) << "read error, using [index]:[value] format";
-            this->instances_[total_count_].emplace_back(i, v);
-            if (i > this->n_features_) this->n_features_ = i;
-        };
-        total_count_++;
-    }
-    file.close();
-    gettimeofday(&t2,NULL);
-    timeuse = (t2.tv_sec - t1.tv_sec) * 1000.0 + (t2.tv_usec - t1.tv_usec)/1000.0;
-    cout<<"Use Time:"<<timeuse<<endl;
-}
-*/
-inline char* findlastline(char *ptr, char *begin) {
-    for (; ptr != begin; --ptr) {
-      if (*ptr == '\n' || *ptr == '\r') return ptr;
-    }
-    return begin;
-}
-void DataSet::load_from_file(string file_name){
-    y_.clear();
-    instances_.clear();
-    total_count_ = 0;
-    n_features_ = 0;
-    std::ifstream ifs (file_name, std::ifstream::binary);
+    std::ifstream ifs(file_name, std::ifstream::binary);
     CHECK(ifs.is_open()) << "file " << file_name << " not found";
-    // get pointer to associated buffer object
-    std::filebuf* pbuf = ifs.rdbuf();
-    // get file size using buffer's members
-    std::size_t fsize = pbuf->pubseekoff (0,ifs.end,ifs.in);
-    pbuf->pubseekpos (0,ifs.in);
-    // allocate memory to contain file data
-    char* buffer=new char[fsize];
-    // get file data
-    pbuf->sgetn (buffer,fsize);
-    ifs.close();
-    char *head = buffer;
+
+    std::array<char, 2 << 20> buffer{}; //16M
     const int nthread = omp_get_max_threads();
-	vector<float_type> *y_thread = new vector<float_type>[nthread];
-	vector<vector<DataSet::node>> *instances_thread = new vector<vector<DataSet::node>>[nthread];
-	int *local_count = new int[nthread];
-	int *local_feature = new int[nthread];
-    memset(local_count, 0, nthread * sizeof(int));
-    memset(local_feature, 0, nthread * sizeof(int));
-    #pragma omp parallel num_threads(nthread)
-    {
-        int tid = omp_get_thread_num();
-        size_t nstep = (fsize + nthread - 1) / nthread;
-        size_t sbegin = min(tid * nstep, fsize);
-        size_t send = min((tid + 1) * nstep, fsize);
-        char *pbegin = findlastline(head + sbegin, head);
-        char *pend;
-        if (tid + 1 == nthread) {
-          pend = head + send;
-        } else {
-          pend = findlastline(head + send, head);
-        }
-        char * lbegin;
-        if(tid == 0) 
-            lbegin = pbegin;
-        else
-            lbegin = pbegin + 1;
-        char * lend = lbegin;
-        while(1){
-            lend = lbegin;
-            if(lend == pend)
-                break;
-            if(*lend == '\n'){
-                lbegin ++;
-                continue;
+
+    while (ifs) {
+        ifs.read(buffer.data(), buffer.size());
+        char *head = buffer.data();
+        size_t size = ifs.gcount();
+        vector<vector<float_type>> y_thread(nthread);
+        vector<node2d> instances_thread(nthread);
+
+        vector<int> local_feature(nthread, 0);
+#pragma omp parallel num_threads(nthread)
+        {
+            //get working area of this thread
+            int tid = omp_get_thread_num();
+            size_t nstep = (size + nthread - 1) / nthread;
+            size_t sbegin = min(tid * nstep, size);
+            size_t send = min((tid + 1) * nstep, size);
+            char *pbegin = findlastline(head + sbegin, head);
+            char *pend = findlastline(head + send, head);
+
+            //move stream start position to the end of last line
+            if (tid == nthread - 1) ifs.seekg(pend - head - send, std::ios_base::cur);
+
+            //read instances line by line
+            char *lbegin = pbegin;
+            char *lend = lbegin;
+            while (lend != pend) {
+                //get one line
+                lend = lbegin + 1;
+                while (lend != pend && *lend != '\n' && *lend != '\r') {
+                    ++lend;
+                }
+                string line(lbegin, lend);
+                stringstream ss(line);
+
+                //read label of an instance
+                y_thread[tid].emplace_back();
+                ss >> y_thread[tid].back();
+
+                //read features of an instance
+                instances_thread[tid].emplace_back();
+                string tuple;
+                while (ss >> tuple) {
+                    int i;
+                    float_type v;
+                    CHECK_EQ(sscanf(tuple.c_str(), "%d:%f", &i, &v), 2) << "read error, using [index]:[value] format";
+                    instances_thread[tid].back().emplace_back(i, v);
+                    if (i > local_feature[tid]) local_feature[tid] = i;
+                };
+
+                //read next instance
+                lbegin = lend;
             }
-            while (lend != pend && *lend != '\n' && *lend != '\r'){
-                ++lend;
-            }
-            string line(lbegin, lend);
-            float_type y;
-            int i;
-            float_type v;
-            stringstream ss(line);
-            ss >> y;
-            y_thread[tid].push_back(y);
-            instances_thread[tid].emplace_back();//reserve space for an instance
-            string tuple;
-            while (ss >> tuple) {
-                CHECK_EQ(sscanf(tuple.c_str(), "%d:%f", &i, &v), 2) << "read error, using [index]:[value] format";
-                instances_thread[tid][local_count[tid]].emplace_back(i, v);
-                if (i > local_feature[tid]) local_feature[tid] = i;
-            };
-            local_count[tid]++;
-            if(lend == pend)
-                break;
-            lbegin = lend + 1;
+        }
+        for (int i = 0; i < nthread; i++) {
+            if (local_feature[i] > n_features_)
+                n_features_ = local_feature[i];
+            total_count_ += instances_thread[i].size();
+        }
+        for (int i = 0; i < nthread; i++) {
+            this->y_.insert(y_.end(), y_thread[i].begin(), y_thread[i].end());
+            this->instances_.insert(instances_.end(), instances_thread[i].begin(), instances_thread[i].end());
         }
     }
-    for(int i = 0; i < nthread; i++){
-        if(local_feature[i] > n_features_)
-            n_features_ = local_feature[i];
-        total_count_ += local_count[i];
-    }
-    for(int i = 0; i < nthread; i++){
-        this->y_.insert(y_.end(), y_thread[i].begin(), y_thread[i].end());
-        this->instances_.insert(instances_.end(), instances_thread[i].begin(), instances_thread[i].end());
-    }
-}
-/*
-inline bool isdigitchars(char c) {
-  return (c >= '0' && c <= '9')
-    || c == '+' || c == '-'
-    || c == '.'
-    || c == 'e' || c == 'E';
+    LOG(INFO)<<"#instances = "<<this->n_instances()<<", #features = "<<this->n_features();
 }
 
-inline bool isblank(char c) {
-  return (c == ' ' || c == '\t');
-}
-
-inline int get_label(const char * begin, const char * end,
-                     const char ** endptr, float &v1) { // NOLINT(*)
-  const char * p = begin;
-  while (p != end && !isdigitchars(*p)) ++p;
-  if (p == end) {
-    *endptr = end;
-    return 0;
-  }
-  const char * q = p;
-  while (q != end && isdigitchars(*q)) ++q;
-  v1 = strtol(p, q);
-  p = q;
-  while (p != end && isblank(*p)) ++p;
-  if (p == end || *p != ':') {
-    // only v1
-    *endptr = p;
-    return 1;
-  }
-  else{
-    return -1;
-  }
-}
-
-inline int ParsePair(const char * begin, const char * end,
-                     const char ** endptr, int &v1, float &v2) { // NOLINT(*)
-  const char * p = begin;
-  while (p != end && !isdigitchars(*p)) ++p;
-  if (p == end) {
-    *endptr = end;
-    return 0;
-  }
-  const char * q = p;
-  while (q != end && isdigitchars(*q)) ++q;
-  v1 = strtol(p, q);
-  p = q;
-  while (p != end && isblank(*p)) ++p;
-  if (p == end || *p != ':') {
-    // only v1
-    *endptr = p;
-    return 1;
-  }
-  p++;
-  while (p != end && !isdigitchars(*p)) ++p;
-  q = p;
-  while (q != end && isdigitchars(*q)) ++q;
-  *endptr = q;
-  v2 = strtof(p, q);
-  return 2;
-}
-
-*/
-
-void DataSet::load_from_python(float *y, char **x, int len){
+void DataSet::load_from_python(float *y, char **x, int len) {
     y_.clear();
     instances_.clear();
     total_count_ = 0;
     n_features_ = 0;
-    for(int i = 0; i < len; i++){
+    for (int i = 0; i < len; i++) {
         int ind;
         float_type v;
         string line = x[i];
@@ -215,14 +107,15 @@ void DataSet::load_from_python(float *y, char **x, int len){
         y_.push_back(y[i]);
         instances_.emplace_back();
         string tuple;
-        while(ss >> tuple){
+        while (ss >> tuple) {
             CHECK_EQ(sscanf(tuple.c_str(), "%d:%f", &ind, &v), 2) << "read error, using [index]:[value] format";
             instances_[total_count_].emplace_back(ind, v);
-            if(ind > n_features_) n_features_ = ind;
+            if (ind > n_features_) n_features_ = ind;
         };
         total_count_++;
     }
 }
+
 const vector<int> &DataSet::count() const {//return the number of instances of each class
     return count_;
 }

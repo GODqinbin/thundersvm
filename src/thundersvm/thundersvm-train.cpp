@@ -53,6 +53,11 @@ int main(int argc, char **argv) {
             }
         }
 
+        if (parser.param_cmd.gamma == 0 && parser.param_cmd.kernel_type != SvmParam::LINEAR){
+            parser.param_cmd.gamma = 1.f / train_dataset.n_features();
+            LOG(WARNING)<<"using default gamma="<<parser.param_cmd.gamma;
+        }
+
 #ifdef USE_CUDA
         CUDA_CHECK(cudaSetDevice(parser.gpu_id));
 #endif
@@ -62,8 +67,10 @@ int main(int argc, char **argv) {
             predict_y = model->cross_validation(train_dataset, parser.param_cmd, parser.nr_fold);
         } else {
             model->train(train_dataset, parser.param_cmd);
+            LOG(INFO)<<"training finished";
             model->save_to_file(parser.model_file_name);
-            predict_y = model->predict(train_dataset.instances(), 10000);
+            LOG(INFO)<<"evaluating training score";
+            predict_y = model->predict(train_dataset.instances(), 100);
         }
 
         //perform svm testing
