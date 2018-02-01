@@ -199,7 +199,6 @@ namespace svm_kernel {
         float *a_old = new float[ws_size];
         float *kIwsI = new float[ws_size];
         float *f = new float[ws_size];
-        //int *wsi = new int[ws_size];
         for (int tid = 0; tid < ws_size; ++tid) {
             int wsi = working_set[tid];
             f[tid] = f_val[wsi];

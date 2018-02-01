@@ -281,9 +281,13 @@ namespace svm_kernel {
         matdesca[2] = 'n';
         matdesca[3] = 'c';
 //        PERFORMANCE_CHECKPOINT_WITH_ID(timerObj, "1");
-//        float_type *kernel = new float_type[m * n];
-	float_type *kernel = (float_type *)hbw_malloc(m * n * sizeof(float_type));
 //        PERFORMANCE_CHECKPOINT_WITH_ID(timerObj, "2");
+#ifdef USE_HBW
+        float_type *kernel = (float_type *)hbw_malloc(m * n * sizeof(float_type));
+#else
+        float_type *kernel = new float_type[m * n];
+#endif
+
         const float_type *val = csr_val.host_data();
         const int *col_ind = csr_col_ind.host_data();
         const int *row_ptr = csr_row_ptr.host_data();
@@ -302,8 +306,11 @@ namespace svm_kernel {
 //        PERFORMANCE_CHECKPOINT_WITH_ID(timerObj, "4");
         mkl_somatcopy('r', 't', m, n, 1, kernel, n, result, m);
 //        PERFORMANCE_CHECKPOINT_WITH_ID(timerObj, "5");
-//        delete[] kernel;
-	hbw_free(kernel);
+#ifdef USE_HBW
+        hbw_free(kernel);
+#else
+        delete[] kernel;
+#endif
 
 
 /*
