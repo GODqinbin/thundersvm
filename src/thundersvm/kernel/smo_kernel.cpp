@@ -89,7 +89,9 @@ namespace svm_kernel {
                 diff[0] = local_diff;
                 break;
             }
-            //select j2 using second order heuristic
+            int j2 = 0;
+	    float min_t = INFINITY;
+	    //select j2 using second order heuristic
             for (int tid = 0; tid < ws_size; ++tid) {
                 int wsi = working_set[tid];
                 if (-up_value > -f[tid] && (is_I_low(alpha[wsi], y[wsi], Cp, Cn))) {
