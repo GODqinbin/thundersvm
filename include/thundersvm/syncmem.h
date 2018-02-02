@@ -4,7 +4,7 @@
 
 #ifndef THUNDERSVM_SYNCMEM_H
 #define THUNDERSVM_SYNCMEM_H
-#define USE_HBW
+//#define USE_HBW
 #include <thundersvm/thundersvm.h>
 #include <hbwmalloc.h>
 namespace thunder {

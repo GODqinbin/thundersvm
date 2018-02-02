@@ -1,8 +1,8 @@
 //
 // Created by jiashuai on 17-11-7.
 //
-//#define USE_PARA
-#define USE_HBW
+#define USE_PARA
+//#define USE_HBW
 #include <thundersvm/kernel/kernelmatrix_kernel.h>
 #include <Eigen/Dense>
 #include <Eigen/Sparse>

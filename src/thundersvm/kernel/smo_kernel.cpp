@@ -7,7 +7,7 @@
 #include <tbb/tbb.h>
 #include <thundersvm/kernel/smo_kernel.h>
 #include <omp.h>
-#define SIMD_SMO
+//#define SIMD_SMO
 namespace svm_kernel {
     int get_min_idx(const float *values, int size) {
         int min_idx = 0;

@@ -7,7 +7,7 @@
 #include <hbwmalloc.h>
 #include <omp.h>
 using namespace svm_kernel;
-#define USE_HBW
+//#define USE_HBW
 
 
 
