@@ -462,7 +462,7 @@ TIMED_SCOPE(timerObj, "f sort");
         }
         if (diff.host_data()[0] < eps) {
             rho = calculate_rho(f_val, y, alpha, Cp, Cn);
-        //    std::cout<<"iter num:"<<iter<<std::endl;
+            std::cout<<"iter num:"<<iter<<std::endl;
             break;
         }
     }
