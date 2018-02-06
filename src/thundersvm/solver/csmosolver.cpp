@@ -8,7 +8,7 @@
 #include <omp.h>
 using namespace svm_kernel;
 #define USE_HBW
-
+#define USE_SIMD
 
 
 void
@@ -149,7 +149,9 @@ TIMED_SCOPE(timerObj, "f sort");
 	}
 	{
 		TIMED_SCOPE(timerObj, "update cache");
+#ifdef USE_SIMD
 #pragma omp simd
+#endif
         for(int i = 0; i < ws_size; i++) {
             used_num[working_set_data[i]]++;
             in_choose[working_set_data[i]] = 1;
@@ -228,14 +230,18 @@ TIMED_SCOPE(timerObj, "f sort");
                     }
                 }
 	}
+#ifdef USE_SIMD
 #pragma omp simd
+#endif
             for(int i = 0; i < ws_size; i++)
                 working_set_cal_rank_data[i] = i;
 
         } else {
             memset(in_choose, 0, sizeof(bool) * n_instances);
             working_set_first_half.copy_from(working_set_last_half);
+#ifdef USE_SIMD
 #pragma omp simd
+#endif
             for (int i = 0; i < q; ++i) {
                 ws_indicator[working_set_data[i]] = 1;
             }
@@ -250,7 +256,9 @@ TIMED_SCOPE(timerObj, "f sort");
             //int reuse_num_first_half = 0;
 
             //int numOfIn = q;
+#ifdef USE_SIMD
 #pragma omp simd
+#endif
             for(int i = 0; i < q; i++){
                 int last_half = working_set_cal_rank_data[i + q];
                 if(last_half != -1) {
@@ -313,7 +321,9 @@ TIMED_SCOPE(timerObj, "f sort");
             //LOG(INFO)<<"f:"<<f_val;
 	{
 		TIMED_SCOPE(timerObj, "update cache");
+#ifdef USE_SIMD
 #pragma omp simd
+#endif
 	        for(int i = 0; i < ws_size; i++)
                 used_num[working_set_data[i]]++;
 
