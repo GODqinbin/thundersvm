@@ -47,31 +47,38 @@ namespace svm_kernel {
         int numOfIter = 0;
         while (1) {
             //select fUp and fLow
-            int i = 0;
-            float up_value = INFINITY;
+#ifdef SIMD_SMO
+#pragma omp simd
+#endif
+            //select fUp and fLow
             for (int tid = 0; tid < ws_size; ++tid) {
                 int wsi = working_set[tid];
                 if (is_I_up(alpha[wsi], y[wsi], Cp, Cn))
-                    if(f[tid] < up_value){
-                        up_value = f[tid];
-                        i = tid;
-                    }
+                    f_val2reduce[tid] = f[tid];
+                else
+                    f_val2reduce[tid] = INFINITY;
             }
+            int i = get_min_idx(f_val2reduce, ws_size);
+            float up_value = f_val2reduce[i];
+
+#ifdef SIMD_SMO
+#pragma omp simd
+#endif
+
+            for (int tid = 0; tid < ws_size; ++tid) {
+                int wsi = working_set[tid];
+                if (is_I_low(alpha[wsi], y[wsi], Cp, Cn))
+                    f_val2reduce[tid] = -f[tid];
+                else
+                    f_val2reduce[tid] = INFINITY;
+            }
+            int j1 = get_min_idx(f_val2reduce, ws_size);
+            float low_value = -f_val2reduce[j1];
 #ifdef SIMD_SMO
 #pragma omp simd
 #endif
             for (int tid = 0; tid < ws_size; ++tid) {
                 kIwsI[tid] = k_mat_rows[row_len * i + working_set[tid]];//K[i, wsi]
-            }
-            int j1 = 0;
-            float low_value = -INFINITY;
-            for (int tid = 0; tid < ws_size; ++tid) {
-                int wsi = working_set[tid];
-                if (is_I_low(alpha[wsi], y[wsi], Cp, Cn))
-                    if(f[tid] > low_value){
-                        low_value = f[tid];
-                        j1 = tid;
-                    }
             }
             //int j1 = get_min_idx(f_val2reduce, ws_size);
             //float low_value = -f_val2reduce[j1];
@@ -89,21 +96,22 @@ namespace svm_kernel {
                 diff[0] = local_diff;
                 break;
             }
-            int j2 = 0;
-	    float min_t = INFINITY;
-	    //select j2 using second order heuristic
+#ifdef SIMD_SMO
+#pragma omp simd
+#endif
+
+            //select j2 using second order heuristic
             for (int tid = 0; tid < ws_size; ++tid) {
                 int wsi = working_set[tid];
                 if (-up_value > -f[tid] && (is_I_low(alpha[wsi], y[wsi], Cp, Cn))) {
-                    double aIJ = kd[i] + kd[tid] - 2 * kIwsI[tid];
-                    double bIJ = -up_value + f[tid];
-                    double ft = -bIJ * bIJ / aIJ;
-                    if(ft < min_t){
-                        min_t = ft;
-                        j2 = tid;
-                    }
-                }
+                    float aIJ = kd[i] + kd[tid] - 2 * kIwsI[tid];
+                    float bIJ = -up_value + f[tid];
+                    f_val2reduce[tid] = -bIJ * bIJ / aIJ;
+                } else
+                    f_val2reduce[tid] = INFINITY;
             }
+            int j2 = get_min_idx(f_val2reduce, ws_size);
+
             //int j2 = get_min_idx(f_val2reduce, ws_size);
 
             //update alpha
