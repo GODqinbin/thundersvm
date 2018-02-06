@@ -19,23 +19,6 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
 int n_instances = k_mat.n_instances();
     int q = ws_size / 2;
 
-    SyncArray<int> working_set(ws_size);
-    SyncArray<int> working_set_first_half(q);
-    SyncArray<int> working_set_last_half(q);
-#ifdef USE_CUDA
-    working_set_first_half.set_device_data(working_set.device_data());
-    working_set_last_half.set_device_data(&working_set.device_data()[q]);
-#endif
-    working_set_first_half.set_host_data(working_set.host_data());
-    working_set_last_half.set_host_data(&working_set.host_data()[q]);
-
-    SyncArray<int> f_idx(n_instances);
-    SyncArray<int> f_idx2sort(n_instances);
-    SyncArray<float_type> f_val2sort(n_instances);
-    SyncArray<float_type> alpha_diff(ws_size);
-    SyncArray<float_type> diff(1);
-
-
     long cache_row_size = n_instances;
     long cache_line_num;
 
@@ -61,6 +44,24 @@ int n_instances = k_mat.n_instances();
 #else
 	kernel_record = (float_type *) malloc(cache_line_num * cache_row_size * sizeof(float_type));
 #endif
+
+    SyncArray<int> working_set(ws_size);
+    SyncArray<int> working_set_first_half(q);
+    SyncArray<int> working_set_last_half(q);
+#ifdef USE_CUDA
+    working_set_first_half.set_device_data(working_set.device_data());
+    working_set_last_half.set_device_data(&working_set.device_data()[q]);
+#endif
+    working_set_first_half.set_host_data(working_set.host_data());
+    working_set_last_half.set_host_data(&working_set.host_data()[q]);
+
+    SyncArray<int> f_idx(n_instances);
+    SyncArray<int> f_idx2sort(n_instances);
+    SyncArray<float_type> f_val2sort(n_instances);
+    SyncArray<float_type> alpha_diff(ws_size);
+    SyncArray<float_type> diff(1);
+
+
 //    	m_case = 0;
 //    }
 /*
@@ -118,36 +119,36 @@ int n_instances = k_mat.n_instances();
     for (int iter = 0;; ++iter) {
         //select working set
 {
-	//TIMED_SCOPE(timerObj, "f copy");
+	TIMED_SCOPE(timerObj, "f copy");
         f_idx2sort.copy_from(f_idx);
         f_val2sort.copy_from(f_val);
 }
 {
-//TIMED_SCOPE(timerObj, "f sort");
+TIMED_SCOPE(timerObj, "f sort");
         sort_f(f_val2sort, f_idx2sort);
 }
         vector<int> ws_indicator(n_instances, 0);
         if (0 == iter) {
 	{
-		//TIMED_SCOPE(timerObj, "select working set");
+		TIMED_SCOPE(timerObj, "select working set");
             select_working_set(ws_indicator, f_idx2sort, y, alpha, Cp, Cn, working_set);
 	}
 	{
-	//	TIMED_SCOPE(timerObj, "get rows");
+		TIMED_SCOPE(timerObj, "get rows");
             k_mat.get_rows(working_set, k_mat_rows, ws_kernel_size);
 	}
 	{
-	//	TIMED_SCOPE(timerObj, "smo kernel");
+		TIMED_SCOPE(timerObj, "smo kernel");
             smo_kernel(y, f_val, alpha, alpha_diff, working_set, Cp, Cn, k_mat_rows, k_mat.diag(), n_instances, eps,
                        diff, max_iter);
 	}
 	{
-	//	TIMED_SCOPE(timerObj, "update f");
+		TIMED_SCOPE(timerObj, "update f");
             //update f
             update_f(f_val, alpha_diff, k_mat_rows, k_mat.n_instances());
 	}
 	{
-	//	TIMED_SCOPE(timerObj, "update cache");
+		TIMED_SCOPE(timerObj, "update cache");
 #pragma omp simd
         for(int i = 0; i < ws_size; i++) {
             used_num[working_set_data[i]]++;
@@ -240,11 +241,11 @@ int n_instances = k_mat.n_instances();
             }
 
 	{
-	//	TIMED_SCOPE(timerObj, "select working set");
+		TIMED_SCOPE(timerObj, "select working set");
             select_working_set(ws_indicator, f_idx2sort, y, alpha, Cp, Cn, working_set_last_half);
 	}
 {
-	//TIMED_SCOPE(timerObj, "ws&kv setup");
+	TIMED_SCOPE(timerObj, "ws&kv setup");
             int rank = 0;
             //int reuse_num_first_half = 0;
 
@@ -262,7 +263,7 @@ int n_instances = k_mat.n_instances();
             }
             //k_mat_rows_first_half.copy_from(k_mat_rows_last_half);
 {
-	//TIMED_SCOPE(timerObj, "kv copy");
+	TIMED_SCOPE(timerObj, "kv copy");
 #pragma omp parallel for
             for(int i = 0; i < ws_size / 2; i++)
 		memcpy(k_mat_rows_first_half + i * n_instances, k_mat_rows_last_half + i * n_instances, n_instances * sizeof(float_type));   
@@ -294,24 +295,24 @@ int n_instances = k_mat.n_instances();
     //        std::cout<<"size:"<<working_set_cal_last_half.size()<<std::endl;
             if(working_set_cal_last_half.size())
 	{
-	//	TIMED_SCOPE(timerObj, "get rows");
+		TIMED_SCOPE(timerObj, "get rows");
             k_mat.get_rows(working_set_cal_last_half, k_mat_rows_last_half, ws_kernel_size / 2);
 	}
         {
-	//	TIMED_SCOPE(timerObj, "smo kernel");
+		TIMED_SCOPE(timerObj, "smo kernel");
 	    //local smo
             smo_kernel(y, f_val, alpha, alpha_diff, working_set, Cp, Cn, k_mat_rows, k_mat.diag(), n_instances, eps, diff,
                        max_iter, cacheIndex, kernel_record, working_set_cal_rank_data);
         }
 	{
-	//	TIMED_SCOPE(timerObj, "update f");
+		TIMED_SCOPE(timerObj, "update f");
 		//update f
             update_f(f_val, alpha_diff, k_mat_rows, k_mat.n_instances(), kernel_record, working_set_cal_rank_data,
                      cacheIndex, working_set_data);
     }
             //LOG(INFO)<<"f:"<<f_val;
 	{
-	//	TIMED_SCOPE(timerObj, "update cache");
+		TIMED_SCOPE(timerObj, "update cache");
 #pragma omp simd
 	        for(int i = 0; i < ws_size; i++)
                 used_num[working_set_data[i]]++;
