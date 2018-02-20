@@ -15,7 +15,7 @@
 
 int main(int argc, char **argv) {
     try {
-        el::Loggers::addFlag(el::LoggingFlag::FixedTimeFormat);
+	el::Loggers::addFlag(el::LoggingFlag::FixedTimeFormat);
 	CMDParser parser;
         parser.parse_command_line(argc, argv);
         DataSet train_dataset;
@@ -69,6 +69,7 @@ int main(int argc, char **argv) {
         } else {
             model->train(train_dataset, parser.param_cmd);
             LOG(INFO)<<"training finished";
+	//	return 0;
             model->save_to_file(parser.model_file_name);
             LOG(INFO)<<"evaluating training score";
             predict_y = model->predict(train_dataset.instances(), 100);

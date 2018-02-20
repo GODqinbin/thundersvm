@@ -7,7 +7,7 @@
 #include <hbwmalloc.h>
 #include <omp.h>
 using namespace svm_kernel;
-#define USE_HBW
+//#define USE_HBW
 #define USE_SIMD
 
 
@@ -17,6 +17,19 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
 	TIMED_SCOPE(timerObj, "solve");
 
 int n_instances = k_mat.n_instances();
+        bool use_hbw = 0;
+	struct bitmask* allow_nodes = numa_bitmask_alloc(7);
+        numa_bitmask_setbit(allow_nodes, 4);
+        numa_bitmask_setbit(allow_nodes, 5);
+        numa_bitmask_setbit(allow_nodes, 6);
+        numa_bitmask_setbit(allow_nodes, 7);
+	if(n_instances > 250000){
+		use_hbw = 1;
+	}
+	else{
+		use_hbw = 0;
+		numa_set_membind(allow_nodes);
+	}
     int q = ws_size / 2;
 
     long cache_row_size = n_instances;
@@ -30,20 +43,21 @@ int n_instances = k_mat.n_instances();
     float_type *kernel_record; //store high frequency used kernel value
 //    int m_case;
 //    if(k_mat_rows_size > hbw_size/4) {
-#ifdef USE_HBW
+if(use_hbw)
         k_mat_rows = (float_type *) hbw_malloc(k_mat_rows_size);
-#else
+//        k_mat_rows = (float_type *) malloc(k_mat_rows_size);
+else
         k_mat_rows = (float_type *) malloc(k_mat_rows_size);
-#endif
+
         cache_line_num = hbw_size / (n_instances * sizeof(float_type));
 //	cache_line_num = 6000;    
 //std::cout<<"cache line num"<<cache_line_num<<std::endl;
 	cache_line_num = ws_size * 10;
-#ifdef USE_HBW
+if(use_hbw)
 	kernel_record = (float_type *) hbw_malloc(cache_line_num * cache_row_size * sizeof(float_type));
-#else
+else
 	kernel_record = (float_type *) malloc(cache_line_num * cache_row_size * sizeof(float_type));
-#endif
+
 
     SyncArray<int> working_set(ws_size);
     SyncArray<int> working_set_first_half(q);
@@ -75,18 +89,22 @@ int n_instances = k_mat.n_instances();
 */
     float_type *k_mat_rows_first_half = k_mat_rows;
     float_type *k_mat_rows_last_half = k_mat_rows + ws_kernel_size / 2;
-#ifdef USE_HBW
+if(use_hbw){
 	int *used_num = (int *) hbw_malloc(n_instances * sizeof(int));
 	bool *in_cache = (bool *) hbw_malloc(n_instances * sizeof(bool));
 	int *cacheIndex = (int *) hbw_malloc(n_instances * sizeof(int));
 	bool *in_choose = (bool *) hbw_malloc(n_instances * sizeof(bool));
-#else
-
-    int *used_num = new int[n_instances]; //number of kernel row value being used
-    bool *in_cache = new bool[n_instances];//whether kernel row value in cache
-    int *cacheIndex = new int[n_instances];//index of kernel row value in kernel_record
-    bool *in_choose = new bool[n_instances];
-#endif
+}
+else{
+//    int *used_num = new int[n_instances]; //number of kernel row value being used
+//    bool *in_cache = new bool[n_instances];//whether kernel row value in cache
+//    int *cacheIndex = new int[n_instances];//index of kernel row value in kernel_record
+//    bool *in_choose = new bool[n_instances];
+	int *used_num = (int *) malloc(n_instances * sizeof(int));
+	bool *in_cache = (bool *) malloc(n_instances * sizeof(bool));
+	int *cacheIndex = (int *) malloc(n_instances * sizeof(int));
+	bool *in_choose = (bool *) malloc(n_instances * sizeof(bool));
+}
     int free_cache_index = 0;
     bool cache_full = false;
     memset(in_choose, 0, sizeof(bool) * n_instances);
@@ -484,21 +502,27 @@ TIMED_SCOPE(timerObj, "f sort");
     }
 */
 //    else{
-#ifdef USE_HBW
+if(use_hbw){
 	hbw_free(used_num);
 	hbw_free(in_cache);
 	hbw_free(cacheIndex);
 	hbw_free(in_choose);
 	hbw_free(k_mat_rows);
+//	free(k_mat_rows);
 	hbw_free(kernel_record);
-#else
-	delete[] used_num;
-	delete[] in_cache;
-	delete[] cacheIndex;
-	delete[] in_choose;
+}
+else{
+//	delete[] used_num;
+//	delete[] in_cache;
+//	delete[] cacheIndex;
+//	delete[] in_choose;
+	free(used_num);
+	free(in_cache);
+	free(cacheIndex);
+	free(in_choose);
 	free(k_mat_rows);
 	free(kernel_record);
-#endif
+}
 
 
 //    }

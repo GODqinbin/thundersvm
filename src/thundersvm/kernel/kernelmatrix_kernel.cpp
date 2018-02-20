@@ -2,12 +2,13 @@
 // Created by jiashuai on 17-11-7.
 //
 //#define USE_PARA
-#define USE_HBW
+//#define USE_HBW
 #include <thundersvm/kernel/kernelmatrix_kernel.h>
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
 #include <mkl.h>
 #include <hbwmalloc.h>
+//#include <numa.h>
 namespace svm_kernel {
     void
     get_working_set_ins(const SyncArray<float_type> &val, const SyncArray<int> &col_ind, const SyncArray<int> &row_ptr,
@@ -233,8 +234,11 @@ namespace svm_kernel {
 //        PERFORMANCE_CHECKPOINT_WITH_ID(timerObj, "1");
 #ifdef USE_HBW
 	float_type *kernel = (float_type *)hbw_malloc(m * n * sizeof(float_type));
+//        float_type *kernel = new float_type[m * n];
 #else
         float_type *kernel = new float_type[m * n];
+//	float_type *kernel = (float_type *)malloc(m * n * sizeof(float_type));
+//	float_type *kernel = (float_type *)numa_alloc_onnode(m * n * sizeof(float_type), 7);
 #endif
 //        PERFORMANCE_CHECKPOINT_WITH_ID(timerObj, "2");
         const float_type *val = csr_val.host_data();
@@ -254,6 +258,8 @@ namespace svm_kernel {
 	hbw_free(kernel);
 #else
         delete[] kernel;
+//	free(kernel);
+//	numa_free(kernel, m * n * sizeof(float_type));
 #endif
 /*
         Eigen::Map<const Eigen::MatrixXf> denseMat(dense_mat.host_data(), n, k);
@@ -286,6 +292,8 @@ namespace svm_kernel {
         float_type *kernel = (float_type *)hbw_malloc(m * n * sizeof(float_type));
 #else
         float_type *kernel = new float_type[m * n];
+//	float_type *kernel = (float_type *)malloc(m * n * sizeof(float_type));
+//	float_type *kernel = (float_type *)numa_alloc_onnode(m * n * sizeof(float_type), 7);
 #endif
 
         const float_type *val = csr_val.host_data();
@@ -310,6 +318,8 @@ namespace svm_kernel {
         hbw_free(kernel);
 #else
         delete[] kernel;
+//	free(kernel);
+//	numa_free(kernel, m * n * sizeof(float_type));
 #endif
 
 
