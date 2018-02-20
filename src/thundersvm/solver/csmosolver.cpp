@@ -18,16 +18,18 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
 
 int n_instances = k_mat.n_instances();
         bool use_hbw = 0;
-	struct bitmask* allow_nodes = numa_bitmask_alloc(7);
-        numa_bitmask_setbit(allow_nodes, 4);
-        numa_bitmask_setbit(allow_nodes, 5);
-        numa_bitmask_setbit(allow_nodes, 6);
-        numa_bitmask_setbit(allow_nodes, 7);
+	struct bitmask* allow_nodes = numa_bitmask_alloc(8);
 	if(n_instances > 250000){
 		use_hbw = 1;
+		numa_bitmask_setall(allow_nodes);
+		numa_set_membind(allow_nodes);
 	}
 	else{
 		use_hbw = 0;
+	        numa_bitmask_setbit(allow_nodes, 4);
+        	numa_bitmask_setbit(allow_nodes, 5);
+        	numa_bitmask_setbit(allow_nodes, 6);
+        	numa_bitmask_setbit(allow_nodes, 7);
 		numa_set_membind(allow_nodes);
 	}
     int q = ws_size / 2;
@@ -89,21 +91,25 @@ else
 */
     float_type *k_mat_rows_first_half = k_mat_rows;
     float_type *k_mat_rows_last_half = k_mat_rows + ws_kernel_size / 2;
+	int *used_num;
+	bool *in_cache;
+	int *cacheIndex;
+	bool *in_choose;
 if(use_hbw){
-	int *used_num = (int *) hbw_malloc(n_instances * sizeof(int));
-	bool *in_cache = (bool *) hbw_malloc(n_instances * sizeof(bool));
-	int *cacheIndex = (int *) hbw_malloc(n_instances * sizeof(int));
-	bool *in_choose = (bool *) hbw_malloc(n_instances * sizeof(bool));
+	used_num = (int *) hbw_malloc(n_instances * sizeof(int));
+	in_cache = (bool *) hbw_malloc(n_instances * sizeof(bool));
+	cacheIndex = (int *) hbw_malloc(n_instances * sizeof(int));
+	in_choose = (bool *) hbw_malloc(n_instances * sizeof(bool));
 }
 else{
 //    int *used_num = new int[n_instances]; //number of kernel row value being used
 //    bool *in_cache = new bool[n_instances];//whether kernel row value in cache
 //    int *cacheIndex = new int[n_instances];//index of kernel row value in kernel_record
 //    bool *in_choose = new bool[n_instances];
-	int *used_num = (int *) malloc(n_instances * sizeof(int));
-	bool *in_cache = (bool *) malloc(n_instances * sizeof(bool));
-	int *cacheIndex = (int *) malloc(n_instances * sizeof(int));
-	bool *in_choose = (bool *) malloc(n_instances * sizeof(bool));
+	used_num = (int *) malloc(n_instances * sizeof(int));
+	in_cache = (bool *) malloc(n_instances * sizeof(bool));
+	cacheIndex = (int *) malloc(n_instances * sizeof(int));
+	in_choose = (bool *) malloc(n_instances * sizeof(bool));
 }
     int free_cache_index = 0;
     bool cache_full = false;

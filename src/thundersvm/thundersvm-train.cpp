@@ -15,6 +15,12 @@
 
 int main(int argc, char **argv) {
     try {
+	struct bitmask* allow_nodes = numa_bitmask_alloc(8);
+        numa_bitmask_setbit(allow_nodes, 4);
+        numa_bitmask_setbit(allow_nodes, 5);
+        numa_bitmask_setbit(allow_nodes, 6);
+        numa_bitmask_setbit(allow_nodes, 7);
+	numa_set_membind(allow_nodes);
 	el::Loggers::addFlag(el::LoggingFlag::FixedTimeFormat);
 	CMDParser parser;
         parser.parse_command_line(argc, argv);
