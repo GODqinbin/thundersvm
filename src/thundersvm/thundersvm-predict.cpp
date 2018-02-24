@@ -10,7 +10,8 @@
 #include <thundersvm/model/nusvc.h>
 #include <thundersvm/model/oneclass_svc.h>
 #include <thundersvm/util/metric.h>
-
+long memory_size;
+long ins_mem_size;
 using std::fstream;
 
 int main(int argc, char **argv) {

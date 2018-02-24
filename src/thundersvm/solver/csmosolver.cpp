@@ -6,32 +6,35 @@
 #include <limits.h>
 #include <hbwmalloc.h>
 #include <omp.h>
+#include <thundersvm/global.h>
 using namespace svm_kernel;
 //#define USE_HBW
 #define USE_SIMD
 
-
+//extern long memory_size;
+//extern long ins_mem_size;
 void
 CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<float_type> &alpha, float_type &rho,
                   SyncArray<float_type> &f_val, float_type eps, float_type Cp, float_type Cn, int ws_size) const {
 	TIMED_SCOPE(timerObj, "solve");
 
 int n_instances = k_mat.n_instances();
+	std::cout<<"instances:"<<n_instances<<std::endl;
         bool use_hbw = 0;
 	struct bitmask* allow_nodes = numa_bitmask_alloc(8);
-	if(n_instances > 250000){
+//	if(n_instances > 250000){
 		use_hbw = 1;
 		numa_bitmask_setall(allow_nodes);
 		numa_set_membind(allow_nodes);
-	}
-	else{
-		use_hbw = 0;
-	        numa_bitmask_setbit(allow_nodes, 4);
-        	numa_bitmask_setbit(allow_nodes, 5);
-        	numa_bitmask_setbit(allow_nodes, 6);
-        	numa_bitmask_setbit(allow_nodes, 7);
-		numa_set_membind(allow_nodes);
-	}
+//	}
+//	else{
+//		use_hbw = 0;
+//	        numa_bitmask_setbit(allow_nodes, 4);
+//       	numa_bitmask_setbit(allow_nodes, 5);
+//        	numa_bitmask_setbit(allow_nodes, 6);
+//        	numa_bitmask_setbit(allow_nodes, 7);
+//		numa_set_membind(allow_nodes);
+//	}
     int q = ws_size / 2;
 
     long cache_row_size = n_instances;
@@ -51,12 +54,24 @@ if(use_hbw)
 else
         k_mat_rows = (float_type *) malloc(k_mat_rows_size);
 
-        cache_line_num = hbw_size / (n_instances * sizeof(float_type));
+        //cache_line_num = hbw_size / (n_instances * sizeof(float_type));
+	cache_line_num = ws_size * 10;
+	long cache_size_ori = cache_line_num * cache_row_size * sizeof(float_type);
+	std::cout<<"mem size"<<memory_size<<std::endl;
+	long free_size = memory_size - ins_mem_size;
+	std::cout<<"free size:"<<free_size<<std::endl;
+	long cache_size = free_size - n_instances * 4 * ws_size * 2- 10 * 1024 * 1024;
+	cache_line_num = cache_size / (n_instances * sizeof(float_type));
+	std::cout<<"cache size:"<<cache_size<<std::endl;
+		
+	if(cache_size < 0){
+		cache_line_num = ws_size * 10;
+	}
+	cache_size = cache_line_num * cache_row_size * sizeof(float_type);
 //	cache_line_num = 6000;    
 //std::cout<<"cache line num"<<cache_line_num<<std::endl;
-	cache_line_num = ws_size * 10;
 if(use_hbw)
-	kernel_record = (float_type *) hbw_malloc(cache_line_num * cache_row_size * sizeof(float_type));
+	kernel_record = (float_type *) hbw_malloc(cache_size);
 else
 	kernel_record = (float_type *) malloc(cache_line_num * cache_row_size * sizeof(float_type));
 
@@ -415,7 +430,7 @@ TIMED_SCOPE(timerObj, "f sort");
                     free_cache_index += wsclh_size;
                 }
                 else{
-                    //std::cout<<"fulling"<<std::endl;
+                    std::cout<<"fulling"<<std::endl;
 #pragma omp parallel for
                     for(int i = 0; i < free_num; i++){
                         //copy_num++;
@@ -461,7 +476,7 @@ TIMED_SCOPE(timerObj, "f sort");
                 //free_cache_index += load_num;
             }
             else{
-    //            std::cout<<"fulled"<<std::endl;
+                std::cout<<"fulled"<<std::endl;
 #pragma omp parallel for schedule(guided)
                 for(int i = 0; i < wsclh_size; i++){
                     int wsi = working_set_cal_last_half[i];
