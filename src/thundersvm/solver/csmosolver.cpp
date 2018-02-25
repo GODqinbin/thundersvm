@@ -21,20 +21,6 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
 int n_instances = k_mat.n_instances();
 	std::cout<<"instances:"<<n_instances<<std::endl;
         bool use_hbw = 0;
-	struct bitmask* allow_nodes = numa_bitmask_alloc(8);
-//	if(n_instances > 250000){
-		use_hbw = 1;
-		numa_bitmask_setall(allow_nodes);
-		numa_set_membind(allow_nodes);
-//	}
-//	else{
-//		use_hbw = 0;
-//	        numa_bitmask_setbit(allow_nodes, 4);
-//       	numa_bitmask_setbit(allow_nodes, 5);
-//        	numa_bitmask_setbit(allow_nodes, 6);
-//        	numa_bitmask_setbit(allow_nodes, 7);
-//		numa_set_membind(allow_nodes);
-//	}
     int q = ws_size / 2;
 
     long cache_row_size = n_instances;
@@ -53,6 +39,21 @@ if(use_hbw)
 //        k_mat_rows = (float_type *) malloc(k_mat_rows_size);
 else
         k_mat_rows = (float_type *) malloc(k_mat_rows_size);
+
+	struct bitmask* allow_nodes = numa_bitmask_alloc(8);
+//	if(n_instances > 250000){
+		use_hbw = 1;
+		numa_bitmask_setall(allow_nodes);
+		numa_set_membind(allow_nodes);
+//	}
+//	else{
+//		use_hbw = 0;
+//	        numa_bitmask_setbit(allow_nodes, 4);
+//       	numa_bitmask_setbit(allow_nodes, 5);
+//        	numa_bitmask_setbit(allow_nodes, 6);
+//        	numa_bitmask_setbit(allow_nodes, 7);
+//		numa_set_membind(allow_nodes);
+//	}
 
         //cache_line_num = hbw_size / (n_instances * sizeof(float_type));
 	cache_line_num = ws_size * 10;
