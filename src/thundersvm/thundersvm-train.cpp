@@ -19,9 +19,9 @@ int main(int argc, char **argv) {
 	long pages = sysconf(_SC_PHYS_PAGES);
     	long page_size = sysconf(_SC_PAGE_SIZE);
 	memory_size = pages * page_size;
-	std::cout<<"pages:"<<pages<<std::endl;
-	std::cout<<"page size:"<<page_size<<std::endl;
-	std::cout<<"memory size:"<<memory_size<<std::endl;
+//	std::cout<<"pages:"<<pages<<std::endl;
+//	std::cout<<"page size:"<<page_size<<std::endl;
+//	std::cout<<"memory size:"<<memory_size<<std::endl;
 	struct bitmask* allow_nodes = numa_bitmask_alloc(8);
         numa_bitmask_setbit(allow_nodes, 4);
         numa_bitmask_setbit(allow_nodes, 5);
@@ -39,7 +39,6 @@ int main(int argc, char **argv) {
 		ins_size += ins[i].size();
 	}
 	ins_mem_size = ins_size * 8;
-	std::cout<<"ins mem size"<<ins_mem_size<<std::endl;
 //	struct bitmask* allow_nodes = numa_bitmask_alloc(8);
 //        numa_bitmask_setbit(allow_nodes, 4);
 //        numa_bitmask_setbit(allow_nodes, 5);
@@ -95,7 +94,6 @@ int main(int argc, char **argv) {
         } else {
             model->train(train_dataset, parser.param_cmd);
             LOG(INFO)<<"training finished";
-		return 0;
             model->save_to_file(parser.model_file_name);
             LOG(INFO)<<"evaluating training score";
             predict_y = model->predict(train_dataset.instances(), 100);
