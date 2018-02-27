@@ -529,8 +529,8 @@ if(use_hbw){
 	hbw_free(in_cache);
 	hbw_free(cacheIndex);
 	hbw_free(in_choose);
-	hbw_free(k_mat_rows);
-//	free(k_mat_rows);
+//	hbw_free(k_mat_rows);
+	free(k_mat_rows);
 	hbw_free(kernel_record);
 }
 else{
