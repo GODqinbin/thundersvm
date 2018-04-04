@@ -6,7 +6,6 @@
 #define THUNDERSVM_SYNCMEM_H
 //#define USE_HBW
 #include <thundersvm/thundersvm.h>
-#include <hbwmalloc.h>
 namespace thunder {
     inline void malloc_host(void **ptr, size_t size) {
 #ifdef USE_CUDA

@@ -11,40 +11,13 @@
 #include <thundersvm/util/metric.h>
 #include "thundersvm/cmdparser.h"
 #include <unistd.h>
-#include <thundersvm/global.h>
-long memory_size;
-long ins_mem_size;
 int main(int argc, char **argv) {
     try {
-	long pages = sysconf(_SC_PHYS_PAGES);
-    	long page_size = sysconf(_SC_PAGE_SIZE);
-	memory_size = pages * page_size;
-//	std::cout<<"pages:"<<pages<<std::endl;
-//	std::cout<<"page size:"<<page_size<<std::endl;
-//	std::cout<<"memory size:"<<memory_size<<std::endl;
-	struct bitmask* allow_nodes = numa_bitmask_alloc(8);
-        numa_bitmask_setbit(allow_nodes, 4);
-        numa_bitmask_setbit(allow_nodes, 5);
-        numa_bitmask_setbit(allow_nodes, 6);
-        numa_bitmask_setbit(allow_nodes, 7);
-	numa_set_membind(allow_nodes);
-	el::Loggers::addFlag(el::LoggingFlag::FixedTimeFormat);
-	CMDParser parser;
+		el::Loggers::addFlag(el::LoggingFlag::FixedTimeFormat);
+		CMDParser parser;
         parser.parse_command_line(argc, argv);
         DataSet train_dataset;
         train_dataset.load_from_file(parser.svmtrain_input_file_name);
-	DataSet::node2d ins = train_dataset.instances();
-	long ins_size = 0;
-	for(int i = 0; i < ins.size(); i++){
-		ins_size += ins[i].size();
-	}
-	ins_mem_size = ins_size * 8;
-//	struct bitmask* allow_nodes = numa_bitmask_alloc(8);
-//        numa_bitmask_setbit(allow_nodes, 4);
-//        numa_bitmask_setbit(allow_nodes, 5);
-//        numa_bitmask_setbit(allow_nodes, 6);
-//        numa_bitmask_setbit(allow_nodes, 7);
-//	numa_set_membind(allow_nodes);
         std::shared_ptr<SvmModel> model;
         switch (parser.param_cmd.svm_type) {
             case SvmParam::C_SVC:

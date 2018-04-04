@@ -1,13 +1,13 @@
 //
 // Created by jiashuai on 17-11-7.
 //
-//#define USE_PARA
+#define USE_PARA
 //#define USE_HBW
 #include <thundersvm/kernel/kernelmatrix_kernel.h>
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
-#include <mkl.h>
-#include <hbwmalloc.h>
+//#include <mkl.h>
+//#include <hbwmalloc.h>
 //#include <numa.h>
 namespace svm_kernel {
     void
@@ -223,7 +223,7 @@ namespace svm_kernel {
     void dns_csr_mul(int m, int n, int k, const SyncArray<float_type> &dense_mat, const SyncArray<float_type> &csr_val,
                      const SyncArray<int> &csr_row_ptr, const SyncArray<int> &csr_col_ind, int nnz,
                      SyncArray<float_type> &result) {
-
+/*
         float alpha(1), beta(0);
         char transa = 'n';
         char matdesca[6];
@@ -261,7 +261,8 @@ namespace svm_kernel {
 //	free(kernel);
 //	numa_free(kernel, m * n * sizeof(float_type));
 #endif
-/*
+*/
+
         Eigen::Map<const Eigen::MatrixXf> denseMat(dense_mat.host_data(), n, k);
         Eigen::Map<const Eigen::SparseMatrix<float, Eigen::RowMajor>> sparseMat(m, k, nnz, csr_row_ptr.host_data(),
                                                                                 csr_col_ind.host_data(),
@@ -271,14 +272,14 @@ namespace svm_kernel {
         Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor> >(result.host_data(),
                 retMat.rows(),
                 retMat.cols()) = retMat;
-*/
+
     }
 
     void dns_csr_mul(int m, int n, int k, const SyncArray<float_type> &dense_mat, const SyncArray<float_type> &csr_val,
                      const SyncArray<int> &csr_row_ptr, const SyncArray<int> &csr_col_ind, int nnz,
                      float_type* result) {
 
-
+/*
         float alpha(1), beta(0);
         char transa = 'n';
         char matdesca[6];
@@ -321,9 +322,9 @@ namespace svm_kernel {
 //	free(kernel);
 //	numa_free(kernel, m * n * sizeof(float_type));
 #endif
+*/
 
 
-/*
         Eigen::Map<const Eigen::MatrixXf> denseMat(dense_mat.host_data(), n, k);
         Eigen::Map<const Eigen::SparseMatrix<float, Eigen::RowMajor>> sparseMat(m, k, nnz, csr_row_ptr.host_data(),
                                                                                 csr_col_ind.host_data(),
@@ -333,7 +334,7 @@ namespace svm_kernel {
         Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor>>(result,
                 retMat.rows(),
                 retMat.cols()) = retMat;
-*/
+
     }
 
 

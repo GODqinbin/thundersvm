@@ -3,7 +3,7 @@
 //
 
 #include <thundersvm/syncmem.h>
-#include <hbwmalloc.h>
+//#include <hbwmalloc.h>
 namespace thunder {
     SyncMem::SyncMem() : device_ptr(nullptr), host_ptr(nullptr), size_(0), head_(UNINITIALIZED), own_device_data(false),
                          own_host_data(false) {

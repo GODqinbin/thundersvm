@@ -11,7 +11,6 @@
 #include <config.h>
 #include "math.h"
 #include "util/common.h"
-#include "numa.h"
 using std::string;
 using std::vector;
 typedef float float_type;

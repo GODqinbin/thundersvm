@@ -21,5 +21,5 @@ else ()
 endif ()
 
 #set(LINK_LIBRARY "${LINK_LIBRARY} memkind")
-target_link_libraries(${PROJECT_NAME}-train ${LINK_LIBRARY} memkind numa tbb)
-target_link_libraries(${PROJECT_NAME}-predict ${LINK_LIBRARY} memkind numa tbb)
+target_link_libraries(${PROJECT_NAME}-train ${LINK_LIBRARY})
+target_link_libraries(${PROJECT_NAME}-predict ${LINK_LIBRARY})
