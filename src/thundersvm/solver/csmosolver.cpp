@@ -391,7 +391,7 @@ TIMED_SCOPE(timerObj, "f sort");
                     free_cache_index += wsclh_size;
                 }
                 else{
-                    std::cout<<"fulling"<<std::endl;
+    //                std::cout<<"fulling"<<std::endl;
 #pragma omp parallel for
                     for(int i = 0; i < free_num; i++){
                         //copy_num++;
@@ -437,7 +437,7 @@ TIMED_SCOPE(timerObj, "f sort");
                 //free_cache_index += load_num;
             }
             else{
-                std::cout<<"fulled"<<std::endl;
+      //          std::cout<<"fulled"<<std::endl;
 #pragma omp parallel for schedule(guided)
                 for(int i = 0; i < wsclh_size; i++){
                     int wsi = working_set_cal_last_half[i];
