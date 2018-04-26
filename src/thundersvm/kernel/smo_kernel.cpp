@@ -197,23 +197,24 @@ namespace svm_kernel {
         while (1) {
 
 //            //select fUp and fLow
-//            int i = 0;
-//            int j1 = 0;
-//            float up_value = INFINITY;
-//            float low_value = -INFINITY;
-//            for (int tid = 0; tid < ws_size; ++tid) {
-//                int wsi = working_set[tid];
-//                if (is_I_up(alpha[wsi], y[wsi], Cp, Cn))
-//                    if(f[tid] < up_value){
-//                        up_value = f[tid];
-//                        i = tid;
-//                    }
-//                if (is_I_low(alpha[wsi], y[wsi], Cp, Cn))
-//                    if(f[tid] > low_value){
-//                        low_value = f[tid];
-//                        j1 = tid;
-//                    }
-//            }
+            int i = 0;
+            int j1 = 0;
+            float up_value = INFINITY;
+            float low_value = -INFINITY;
+#pragma omp simd
+            for (int tid = 0; tid < ws_size; ++tid) {
+                int wsi = working_set[tid];
+                if (is_I_up(alpha[wsi], y[wsi], Cp, Cn))
+                    if(f[tid] < up_value){
+                        up_value = f[tid];
+                        i = tid;
+                    }
+                if (is_I_low(alpha[wsi], y[wsi], Cp, Cn))
+                    if(f[tid] > low_value){
+                        low_value = f[tid];
+                        j1 = tid;
+                    }
+            }
 
 #ifdef SIMD_SMO
 #pragma omp simd
@@ -226,8 +227,8 @@ namespace svm_kernel {
                 else
                     f_val2reduce[tid] = INFINITY;
             }
-            int i = get_min_idx(f_val2reduce, ws_size);
-            float up_value = f_val2reduce[i];
+//            int i = get_min_idx(f_val2reduce, ws_size);
+//            float up_value = f_val2reduce[i];
 
 #ifdef SIMD_SMO
 #pragma omp simd
@@ -240,8 +241,8 @@ namespace svm_kernel {
                 else
                     f_val2reduce[tid] = INFINITY;
             }
-            int j1 = get_min_idx(f_val2reduce, ws_size);
-            float low_value = -f_val2reduce[j1];
+//            int j1 = get_min_idx(f_val2reduce, ws_size);
+//            float low_value = -f_val2reduce[j1];
 
 
             int wsI = working_set[i];

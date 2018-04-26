@@ -94,6 +94,7 @@ int main(int argc, char **argv) {
         } else {
             model->train(train_dataset, parser.param_cmd);
             LOG(INFO)<<"training finished";
+	//	return 0;
             model->save_to_file(parser.model_file_name);
             LOG(INFO)<<"evaluating training score";
             predict_y = model->predict(train_dataset.instances(), 100);
