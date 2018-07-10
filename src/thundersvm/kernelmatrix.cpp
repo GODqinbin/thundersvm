@@ -169,12 +169,14 @@ const SyncArray<float_type> &KernelMatrix::diag() const {
 
 void
 KernelMatrix::dns_csr_mul(const SyncArray<float_type> &dense_mat, int n_rows, SyncArray<float_type> &result) const {
+	TIMED_SCOPE(timerObj, "dns csr mul");
     CHECK_EQ(dense_mat.size(), n_rows * n_features_) << "dense matrix features doesn't match";
     svm_kernel::dns_csr_mul(n_instances_, n_rows, n_features_, dense_mat, val_, row_ptr_, col_ind_, nnz_, result);
 }
 
 void
 KernelMatrix::dns_csr_mul(const SyncArray<float_type> &dense_mat, int n_rows, float_type *result) const {
+	TIMED_SCOPE(timerObj, "dns csr mul");
     CHECK_EQ(dense_mat.size(), n_rows * n_features_) << "dense matrix features doesn't match";
     svm_kernel::dns_csr_mul(n_instances_, n_rows, n_features_, dense_mat, val_, row_ptr_, col_ind_, nnz_, result);
 }

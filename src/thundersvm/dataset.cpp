@@ -26,12 +26,15 @@ void DataSet::load_from_file(string file_name) {
     std::ifstream ifs(file_name, std::ifstream::binary);
     CHECK(ifs.is_open()) << "file " << file_name << " not found";
 
-    std::array<char, 2 << 20> buffer{}; //16M
-    const int nthread = omp_get_max_threads();
+    //std::array<char, 2 << 20> buffer{}; //16M
+    int buffer_size = 16 << 20;
+	char* buffer = (char *)malloc(buffer_size);
+	const int nthread = omp_get_max_threads();
 
     while (ifs) {
-        ifs.read(buffer.data(), buffer.size());
-        char *head = buffer.data();
+		char *head=buffer;
+        ifs.read(buffer, buffer_size);
+        //char *head = buffer.data();
         size_t size = ifs.gcount();
         vector<vector<float_type>> y_thread(nthread);
         vector<node2d> instances_thread(nthread);
@@ -42,8 +45,8 @@ void DataSet::load_from_file(string file_name) {
             //get working area of this thread
             int tid = omp_get_thread_num();
             size_t nstep = (size + nthread - 1) / nthread;
-            size_t sbegin = min(tid * nstep, size);
-            size_t send = min((tid + 1) * nstep, size);
+            size_t sbegin = min(tid * nstep, size - 1);
+            size_t send = min((tid + 1) * nstep, size - 1);
             char *pbegin = findlastline(head + sbegin, head);
             char *pend = findlastline(head + send, head);
 

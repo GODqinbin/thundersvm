@@ -1,9 +1,12 @@
-#numactl --membind=4,5,6,7 build/bin/thundersvm-train -c 100 -g 0.5 /home/h/haofu/qinbin/thundersvm/dataset/a9a > log/a9a.log
-#numactl --membind=4 build/bin/thundersvm-train -c 10 -g 0.125 /data/dataset/mnist.scale > mnist.scale.log
-#build/bin/thundersvm-train -c 100 -g 0.125 /home/qinbin/thundersvm_zeyi/thundersvm/dataset/rcv1_train.binary > log/rcv1.log
-build/bin/thundersvm-train -c 4 -g 0.5 /data/dataset/real-sim > real-sim.log
-#build/bin/thundersvm-train -c 10 -g 0.5 /home/qinbin/thundersvm_zeyi/thundersvm/dataset/w8a > log/w8a.log
-#build/bin/thundersvm-train -c 10 -g 0.002 /home/qinbin/thundersvm_zeyi/thundersvm/dataset/cifar10.libsvm > log/cifar10.log
-#build/bin/thundersvm-train -c 1 -g 0.3 /home/qinbin/thundersvm_zeyi/thundersvm/dataset/connect-4 > log/connect-4.log
-#build/bin/thundersvm-train -c 10 -g 0.125 /home/qinbin/thundersvm_zeyi/thundersvm/dataset/mnist.scale > log/mnist.log
-#build/bin/thundersvm-train -c 4 -g 0.5 /home/qinbin/thundersvm_zeyi/thundersvm/dataset/news20.scale > log/news20.scale.log
+#build/bin/thundersvm-train -c 100 -g 0.382 ../../dataset2/gisette_scale > log/gisette.log
+build/bin/thundersvm-train -c 100 -g 0.5 ../../dataset2/a9a > log/a9a.log
+build/bin/thundersvm-train -c 10 -g 0.125 ../../dataset2/mnist.scale > log/mnist.scale.log
+build/bin/thundersvm-train -c 100 -g 0.125 ../../dataset2/rcv1_train.binary > log/rcv1.log
+build/bin/thundersvm-train -c 4 -g 0.5 ../../dataset2/real-sim > log/real-sim.log
+build/bin/thundersvm-train -c 10 -g 0.5 ../../dataset2/w8a > log/w8a.log
+#build/bin/thundersvm-train -c 10 -g 0.002 ../../dataset2/cifar10.libsvm > log/cifar10.log
+build/bin/thundersvm-train -c 1 -g 0.3 ../../dataset2/connect-4 > log/connect-4.log
+#build/bin/thundersvm-train -c 4 -g 0.5 ../../dataset2/news20.scale > log/news20.scale.log
+#build/bin/thundersvm-train -c 0.01 -g 1 ../../dataset2/epsilon_normalized > log/epsilon.log
+#build/bin/thundersvm-train -c 1000 -g 0.006 ../../dataset2/mnist8m.scale > log/mnist8m.log
+#build/bin/thundersvm-train -c 100 -g 0.125 ../../dataset2/rcv1_test.binary > log/rcv1_test.log

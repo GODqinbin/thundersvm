@@ -38,12 +38,12 @@ int n_instances = k_mat.n_instances();
 
 
         //cache_line_num = hbw_size / (n_instances * sizeof(float_type));
-	cache_line_num = ws_size * 10;
-	long cache_size = cache_line_num * cache_row_size * sizeof(float_type);
-	cache_size = (long)2 * 1024 * 1024 * 1024;
-	cache_line_num  = cache_size / (n_instances * sizeof(float_type));
-	cache_size = cache_line_num * cache_row_size * sizeof(float_type);
-//	cache_line_num = 6000;    
+//	cache_line_num = ws_size * 10;
+//	long cache_size = cache_line_num * cache_row_size * sizeof(float_type);
+//	cache_size = (long)2 * 1024 * 1024 * 1024;
+//	cache_line_num  = cache_size / (n_instances * sizeof(float_type));
+//	cache_size = cache_line_num * cache_row_size * sizeof(float_type);
+	cache_line_num = 10000;    
 //std::cout<<"cache line num"<<cache_line_num<<std::endl;
 	kernel_record = (float_type *) malloc(cache_line_num * cache_row_size * sizeof(float_type));
 
