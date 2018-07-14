@@ -130,7 +130,7 @@ namespace svm_kernel {
         for (int i = 0; i < m; i++) {
             for (int j = 0; j < n; ++j) {
                 dot_product[(long)i * n + (long)j] = expf(
-                        -(self_dot1_data[self_dot0_idx_data[i]] + self_dot1_data[j] - dot_product[(long)gsi * n + j] * 2) *
+                        -(self_dot1_data[self_dot0_idx_data[i]] + self_dot1_data[j] - dot_product[(long)i * n + j] * 2) *
                         gamma);
             }
         }
