@@ -189,12 +189,12 @@ namespace svm_kernel {
             if(wscri == -1){
                 int cIwsI = cacheIndex[wsI];
                 for (int tid = 0; tid < ws_size; ++tid) {
-                    kIwsI[tid] = kernel_record[row_len * cIwsI + working_set[tid]];
+                    kIwsI[tid] = kernel_record[(long)row_len * cIwsI + working_set[tid]];
                 }
             }
             else{
                 for (int tid = 0; tid < ws_size; ++tid) {
-                    kIwsI[tid] = k_mat_rows[row_len * wscri + working_set[tid]];
+                    kIwsI[tid] = k_mat_rows[(long)row_len * wscri + working_set[tid]];
                 }
             }
             float_type low_value = -INFINITY;
@@ -254,13 +254,13 @@ namespace svm_kernel {
             if(wscrj2 == -1){
                 int cIwsj2 = cacheIndex[wsj2];
                 for (int tid = 0; tid < ws_size; ++tid) {
-                    float kJ2wsI = kernel_record[row_len * cIwsj2 + working_set[tid]];
+                    float kJ2wsI = kernel_record[(long)row_len * cIwsj2 + working_set[tid]];
                     f[tid] -= l * (kJ2wsI - kIwsI[tid]);
                 }
             }
             else{
                 for (int tid = 0; tid < ws_size; ++tid) {
-                    float kJ2wsI = k_mat_rows[row_len * wscrj2 + working_set[tid]];
+                    float kJ2wsI = k_mat_rows[(long)row_len * wscrj2 + working_set[tid]];
                     f[tid] -= l * (kJ2wsI - kIwsI[tid]);
                 }
             }

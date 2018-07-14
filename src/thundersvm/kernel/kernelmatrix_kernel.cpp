@@ -30,7 +30,7 @@ namespace svm_kernel {
 #endif
             for (int j = row_ptr_data[row]; j < row_ptr_data[row + 1]; ++j) {
                 int col = col_ind_data[j];
-                data_rows_data[col * m + i] = val_data[j]; // row-major for cuSPARSE
+                data_rows_data[(long)col * m + i] = val_data[j]; // row-major for cuSPARSE
             }
         }
     }
@@ -54,7 +54,7 @@ namespace svm_kernel {
 #endif
             for (int j = row_ptr_data[row]; j < row_ptr_data[row + 1]; ++j) {
                 int col = col_ind_data[j];
-                data_rows_data[col * m + i] = val_data[j]; // row-major for cuSPARSE
+                data_rows_data[(long)col * m + i] = val_data[j]; // row-major for cuSPARSE
             }
         }
     }
@@ -74,7 +74,7 @@ namespace svm_kernel {
 //#pragma omp simd
             for (int j = 0; j < n; ++j) {
                 dot_product_data[(long)i * n + (long)j] = expf(
-                        -(self_dot0_data[i] + self_dot1_data[j] - dot_product_data[i * n + j] * 2) * gamma);
+                        -(self_dot0_data[i] + self_dot1_data[j] - dot_product_data[(long)i * n + j] * 2) * gamma);
             }
         }
     }
@@ -92,7 +92,7 @@ namespace svm_kernel {
 //#pragma omp simd
             for (int j = 0; j < n; ++j) {
                 dot_product_data[(long)i * n + (long)j] = expf(
-                        -(self_dot1_data[self_dot0_idx_data[i]] + self_dot1_data[j] - dot_product_data[i * n + j] * 2) *
+                        -(self_dot1_data[self_dot0_idx_data[i]] + self_dot1_data[j] - dot_product_data[(long)i * n + j] * 2) *
                         gamma);
             }
         }
@@ -112,7 +112,7 @@ namespace svm_kernel {
 //#pragma omp simd
             for (int j = 0; j < n; ++j) {
                 dot_product_data[(long)i * n + (long)j] = expf(
-                        -(self_dot1_data[self_dot0_idx_data[i]] + self_dot1_data[j] - dot_product_data[i * n + j] * 2) *
+                        -(self_dot1_data[self_dot0_idx_data[i]] + self_dot1_data[j] - dot_product_data[(long)i * n + j] * 2) *
                         gamma);
             }
         }
@@ -130,7 +130,7 @@ namespace svm_kernel {
         for (int i = 0; i < m; i++) {
             for (int j = 0; j < n; ++j) {
                 dot_product[(long)i * n + (long)j] = expf(
-                        -(self_dot1_data[self_dot0_idx_data[i]] + self_dot1_data[j] - dot_product[i * n + j] * 2) *
+                        -(self_dot1_data[self_dot0_idx_data[i]] + self_dot1_data[j] - dot_product[(long)gsi * n + j] * 2) *
                         gamma);
             }
         }

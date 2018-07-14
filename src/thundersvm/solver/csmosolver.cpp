@@ -24,19 +24,20 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
     int q = ws_size / 2;
 	std::cout<<"ws_size:"<<ws_size<<std::endl;
     long cache_row_size = n_instances;
-    size_t cache_line_num;
+    size_t cache_line_num = 1000;
 
     long hbw_size = (long)16 * 1024 * 1024 * 1024;
     //std::cout<<"size:"<<hbw_size<<std::endl;
     long ws_kernel_size = (long)ws_size * n_instances;
 	std::cout<<"ws_kernel_size:"<<ws_kernel_size<<std::endl;
+    long kernel_record_size = (long)cache_line_num * n_instances;
+    std::cout<<"kernel_record_size:"<<kernel_record_size<<std::endl;
     long k_mat_rows_size = ws_kernel_size * sizeof(float_type);
-    float_type *k_mat_rows;
-    float_type *kernel_record; //store high frequency used kernel value
+    float_type *k_mat_rows = new float_type[ws_kernel_size];
+    float_type *kernel_record = new float_type[kernel_record_size]; //store high frequency used kernel value
 //    int m_case;
 //    if(k_mat_rows_size > hbw_size/4) {
-        k_mat_rows = (float_type *) malloc(k_mat_rows_size);
-
+        //k_mat_rows = (float_type *) malloc(k_mat_rows_size);
 
         //cache_line_num = hbw_size / (n_instances * sizeof(float_type));
 //	cache_line_num = ws_size * 10;
@@ -194,7 +195,7 @@ TIMED_SCOPE(timerObj, "f sort");
                         //miss_num++;
 			//copy_num++;
 			memcpy(kernel_record + (free_cache_index + i) * cache_row_size,
-                               k_mat_rows + i * n_instances,
+                               k_mat_rows + (long)i * n_instances,
                                n_instances * sizeof(float_type));
                         int wsi = working_set_data[i];
                         in_cache[wsi] = true;
@@ -208,7 +209,7 @@ TIMED_SCOPE(timerObj, "f sort");
                         //miss_num++;
 			//copy_num++;
 			memcpy(kernel_record + (free_cache_index + i) * cache_row_size,
-                               k_mat_rows + i * n_instances,
+                               k_mat_rows + (long)i * n_instances,
                                n_instances * sizeof(float_type));
                         int wsi = working_set_data[i];
                         in_cache[wsi] = true;
@@ -224,7 +225,7 @@ TIMED_SCOPE(timerObj, "f sort");
                                 in_cache[j] = false;
                                 //copy_num++;
 				memcpy(kernel_record + cacheIndex[j] * cache_row_size,
-                                       k_mat_rows + i * n_instances,
+                                       k_mat_rows + (long)i * n_instances,
                                        n_instances * sizeof(float));
                                 in_cache[wsi] = true;
                                 cacheIndex[wsi] = cacheIndex[j];
@@ -278,7 +279,7 @@ TIMED_SCOPE(timerObj, "f sort");
 	TIMED_SCOPE(timerObj, "kv copy");
 #pragma omp parallel for
             for(int i = 0; i < ws_size / 2; i++)
-		memcpy(k_mat_rows_first_half + i * n_instances, k_mat_rows_last_half + i * n_instances, n_instances * sizeof(float_type));   
+		memcpy(k_mat_rows_first_half + (long)i * n_instances, k_mat_rows_last_half + (long)i * n_instances, n_instances * sizeof(float_type));
 }
 	//memcpy(k_mat_rows_first_half, k_mat_rows_last_half, ws_kernel_size / 2 * sizeof(float_type));
 
@@ -371,7 +372,7 @@ TIMED_SCOPE(timerObj, "f sort");
                     for(int i = 0; i < wsclh_size; i++){
                         //copy_num++;
 			memcpy(kernel_record + (free_cache_index + i) * cache_row_size,
-                               k_mat_rows + (q + i) * n_instances,
+                               k_mat_rows + (long)(q + i) * n_instances,
                                n_instances * sizeof(float_type));
                         int wsi = working_set_cal_last_half[i];
                         in_cache[wsi] = true;
@@ -400,7 +401,7 @@ TIMED_SCOPE(timerObj, "f sort");
                     for(int i = 0; i < free_num; i++){
                         //copy_num++;
 			memcpy(kernel_record + (free_cache_index + i) * cache_row_size,
-                               k_mat_rows + (q + i) * n_instances,
+                               k_mat_rows + (long)(q + i) * n_instances,
                                n_instances * sizeof(float_type));
                         int wsi = working_set_cal_last_half[i];
                         in_cache[wsi] = true;
@@ -429,7 +430,7 @@ TIMED_SCOPE(timerObj, "f sort");
                                 in_cache[j] = false;
                                 //copy_num++;
 				memcpy(kernel_record + cacheIndex[j] * cache_row_size,
-                                       k_mat_rows + (q + i) * n_instances,
+                                       k_mat_rows + (long)(q + i) * n_instances,
                                        n_instances * sizeof(float));
                                 in_cache[wsi] = true;
                                 cacheIndex[wsi] = cacheIndex[j];
@@ -456,7 +457,7 @@ TIMED_SCOPE(timerObj, "f sort");
                             in_cache[j] = false;
                             //copy_num++;
 				            memcpy(kernel_record + cacheIndex[j] * cache_row_size,
-                                   k_mat_rows + (q + i) * n_instances,
+                                   k_mat_rows + (long)(q + i) * n_instances,
                                    n_instances * sizeof(float));
                             in_cache[wsi] = true;
                             cacheIndex[wsi] = cacheIndex[j];
@@ -496,9 +497,10 @@ TIMED_SCOPE(timerObj, "f sort");
 	free(in_cache);
 	free(cacheIndex);
 	free(in_choose);
-	free(k_mat_rows);
-	free(kernel_record);
-
+	//free(k_mat_rows);
+	//free(kernel_record);
+    delete[] k_mat_rows;
+        delete[] kernel_record;
 
 //    }
     }
