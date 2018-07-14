@@ -45,9 +45,9 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
 //	cache_size = (long)2 * 1024 * 1024 * 1024;
 //	cache_line_num  = cache_size / (n_instances * sizeof(float_type));
 //	cache_size = cache_line_num * cache_row_size * sizeof(float_type);
-	cache_line_num = 10000;    
+	//cache_line_num = 10000;
 //std::cout<<"cache line num"<<cache_line_num<<std::endl;
-	kernel_record = (float_type *) malloc((size_t)cache_line_num * cache_row_size * sizeof(float_type));
+	//kernel_record = (float_type *) malloc((size_t)cache_line_num * cache_row_size * sizeof(float_type));
 
 
     SyncArray<int> working_set(ws_size);
