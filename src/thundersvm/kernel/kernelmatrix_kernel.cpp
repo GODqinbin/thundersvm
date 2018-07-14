@@ -73,7 +73,7 @@ namespace svm_kernel {
         for (int i = 0; i < m; i++) {
 //#pragma omp simd
             for (int j = 0; j < n; ++j) {
-                dot_product_data[i * n + j] = expf(
+                dot_product_data[(long)i * n + (long)j] = expf(
                         -(self_dot0_data[i] + self_dot1_data[j] - dot_product_data[i * n + j] * 2) * gamma);
             }
         }
@@ -91,7 +91,7 @@ namespace svm_kernel {
         for (int i = 0; i < m; i++) {
 //#pragma omp simd
             for (int j = 0; j < n; ++j) {
-                dot_product_data[i * n + j] = expf(
+                dot_product_data[(long)i * n + (long)j] = expf(
                         -(self_dot1_data[self_dot0_idx_data[i]] + self_dot1_data[j] - dot_product_data[i * n + j] * 2) *
                         gamma);
             }
@@ -111,7 +111,7 @@ namespace svm_kernel {
         for (int i = 0; i < m; i++) {
 //#pragma omp simd
             for (int j = 0; j < n; ++j) {
-                dot_product_data[i * n + j] = expf(
+                dot_product_data[(long)i * n + (long)j] = expf(
                         -(self_dot1_data[self_dot0_idx_data[i]] + self_dot1_data[j] - dot_product_data[i * n + j] * 2) *
                         gamma);
             }
@@ -129,7 +129,7 @@ namespace svm_kernel {
 #pragma omp parallel for schedule(guided)
         for (int i = 0; i < m; i++) {
             for (int j = 0; j < n; ++j) {
-                dot_product[i * n + j] = expf(
+                dot_product[(long)i * n + (long)j] = expf(
                         -(self_dot1_data[self_dot0_idx_data[i]] + self_dot1_data[j] - dot_product[i * n + j] * 2) *
                         gamma);
             }

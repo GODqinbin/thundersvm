@@ -18,17 +18,18 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
                   SyncArray<float_type> &f_val, float_type eps, float_type Cp, float_type Cn, int ws_size) const {
 	TIMED_SCOPE(timerObj, "solve");
 
-int n_instances = k_mat.n_instances();
+	int n_instances = k_mat.n_instances();
 	std::cout<<"instances:"<<n_instances<<std::endl;
         bool use_hbw = 0;
     int q = ws_size / 2;
-
+	std::cout<<"ws_size:"<<ws_size<<std::endl;
     long cache_row_size = n_instances;
-    long cache_line_num;
+    size_t cache_line_num;
 
     long hbw_size = (long)16 * 1024 * 1024 * 1024;
     //std::cout<<"size:"<<hbw_size<<std::endl;
-    long ws_kernel_size = ws_size * n_instances;
+    long ws_kernel_size = (long)ws_size * n_instances;
+	std::cout<<"ws_kernel_size:"<<ws_kernel_size<<std::endl;
     long k_mat_rows_size = ws_kernel_size * sizeof(float_type);
     float_type *k_mat_rows;
     float_type *kernel_record; //store high frequency used kernel value
@@ -45,7 +46,7 @@ int n_instances = k_mat.n_instances();
 //	cache_size = cache_line_num * cache_row_size * sizeof(float_type);
 	cache_line_num = 10000;    
 //std::cout<<"cache line num"<<cache_line_num<<std::endl;
-	kernel_record = (float_type *) malloc(cache_line_num * cache_row_size * sizeof(float_type));
+	kernel_record = (float_type *) malloc((size_t)cache_line_num * cache_row_size * sizeof(float_type));
 
 
     SyncArray<int> working_set(ws_size);
