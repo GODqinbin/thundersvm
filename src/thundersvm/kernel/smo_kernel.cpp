@@ -486,7 +486,7 @@ namespace svm_kernel {
 //		sum_diff += alpha_diff_data[i] * k_mat_rows_data[i * n_instances + idx];
                 float_type d = alpha_diff_data[i];
                 if (d != 0) {
-                    sum_diff += d * k_mat_rows_data[i * n_instances + idx];
+                    sum_diff += d * k_mat_rows_data[(long)i * n_instances + idx];
                 }
             }
             f_data[idx] -= sum_diff;
@@ -512,7 +512,7 @@ namespace svm_kernel {
 //		sum_diff += alpha_diff_data[i] * k_mat_rows_data[i * n_instances + idx];
                 float_type d = alpha_diff_data[i];
                 if (d != 0) {
-                    sum_diff += d * k_mat_rows_data[i * n_instances + idx];
+                    sum_diff += d * k_mat_rows_data[(long)i * n_instances + idx];
                 }
             }
             f_data[idx] -= sum_diff;
@@ -537,10 +537,10 @@ namespace svm_kernel {
                 float_type d = alpha_diff_data[i];
                 if (d != 0) {
                     if(working_set_cal_rank_data[i] == -1){
-                        sum_diff += d * kernel_record[n_instances * cacheIndex[working_set[i]] + idx];
+                        sum_diff += d * kernel_record[(long)n_instances * cacheIndex[working_set[i]] + idx];
                     }
                     else{
-                        sum_diff += d * k_mat_rows_data[n_instances * working_set_cal_rank_data[i] + idx];
+                        sum_diff += d * k_mat_rows_data[(long)n_instances * working_set_cal_rank_data[i] + idx];
                     }
                 }
             }
