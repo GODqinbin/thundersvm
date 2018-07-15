@@ -59,7 +59,7 @@ namespace svm_kernel {
                     }
             }
             for (int tid = 0; tid < ws_size; ++tid) {
-                kIwsI[tid] = k_mat_rows[row_len * i + working_set[tid]];//K[i, wsi]
+                kIwsI[tid] = k_mat_rows[(long)row_len * i + working_set[tid]];//K[i, wsi]
             }
             float_type low_value = -INFINITY;
             for (int tid = 0; tid < ws_size; ++tid) {
@@ -117,7 +117,7 @@ namespace svm_kernel {
             //update f
             for (int tid = 0; tid < ws_size; ++tid) {
                 int wsi = working_set[tid];
-                float_type kJ2wsI = k_mat_rows[row_len * j2 + wsi];//K[J2, wsi]
+                float_type kJ2wsI = k_mat_rows[(long)row_len * j2 + wsi];//K[J2, wsi]
                 f[tid] -= l * (kJ2wsI - kIwsI[tid]);
             }
             numOfIter++;
