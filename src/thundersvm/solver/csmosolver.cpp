@@ -470,10 +470,13 @@ TIMED_SCOPE(timerObj, "f sort");
 
 	}
         }
-        if (iter % 10 == 0) {
-            printf(".");
-            std::cout.flush();
-        }
+//        if (iter % 10 == 0) {
+//            printf(".");
+//            std::cout.flush();
+//        }
+        if (iter % 100 == 0)
+            LOG(INFO) << "global iter = " << iter << ", diff = "
+                      << diff.host_data()[0];
         if (diff.host_data()[0] < eps) {
             rho = calculate_rho(f_val, y, alpha, Cp, Cn);
         //    std::cout<<"iter num:"<<iter<<std::endl;
