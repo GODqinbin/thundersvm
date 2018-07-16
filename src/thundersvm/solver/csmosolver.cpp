@@ -506,7 +506,6 @@ TIMED_SCOPE(timerObj, "f sort");
                       << diff_data[0];
 
         if ((same_local_diff_cnt >= 10 && fabs(diff_data[0] - 2.0) > eps) || diff_data[0] < eps ||
-            (out_max_iter != -1) && (iter == out_max_iter) ||
             (swap_local_diff_cnt >= 10 && fabs(diff_data[0] - 2.0) > eps)) {
             rho = calculate_rho(f_val, y, alpha, Cp, Cn);
             LOG(INFO) << "global iter = " << iter << ", total local iter = " << local_iter << ", diff = "
