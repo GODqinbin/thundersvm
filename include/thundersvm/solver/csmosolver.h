@@ -30,6 +30,9 @@ protected:
                   float_type Cp,
                   float_type Cn) const;
 
+    float_type calculate_obj(const SyncArray<float_type> &f_val, const SyncArray<float_type> &alpha,
+                             const SyncArray<int> &y) const;
+
     virtual void
     smo_kernel(const SyncArray<int> &y, SyncArray<float_type> &f_val, SyncArray<float_type> &alpha,
                SyncArray<float_type> &alpha_diff,

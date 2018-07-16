@@ -18,6 +18,14 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
                   SyncArray<float_type> &f_val, float_type eps, float_type Cp, float_type Cn, int ws_size) const {
 	TIMED_SCOPE(timerObj, "solve");
 
+    //avoid infinite loop of repeated local diff
+    int same_local_diff_cnt = 0;
+    float_type previous_local_diff = INFINITY;
+    int swap_local_diff_cnt = 0;
+    float_type last_local_diff = INFINITY;
+    float_type second_last_local_diff = INFINITY;
+    long long local_iter = 0;
+
 	int n_instances = k_mat.n_instances();
 	std::cout<<"instances:"<<n_instances<<std::endl;
         bool use_hbw = 0;
@@ -64,8 +72,8 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
     SyncArray<int> f_idx2sort(n_instances);
     SyncArray<float_type> f_val2sort(n_instances);
     SyncArray<float_type> alpha_diff(ws_size);
-    SyncArray<float_type> diff(1);
-
+    SyncArray<float_type> diff(2);
+    float_type *diff_data = diff.host_data();
 
 //    	m_case = 0;
 //    }
@@ -152,6 +160,8 @@ TIMED_SCOPE(timerObj, "f sort");
             //update f
             update_f(f_val, alpha_diff, k_mat_rows, k_mat.n_instances());
 	}
+
+            local_iter += diff_data[1];
 	{
 		TIMED_SCOPE(timerObj, "update cache");
 #ifdef USE_SIMD
@@ -323,6 +333,7 @@ TIMED_SCOPE(timerObj, "f sort");
             update_f(f_val, alpha_diff, k_mat_rows, k_mat.n_instances(), kernel_record, working_set_cal_rank_data,
                      cacheIndex, working_set_data);
     }
+            local_iter += diff_data[1];
             //LOG(INFO)<<"f:"<<f_val;
 	{
 		TIMED_SCOPE(timerObj, "update cache");
@@ -474,14 +485,42 @@ TIMED_SCOPE(timerObj, "f sort");
 //            printf(".");
 //            std::cout.flush();
 //        }
+        //track unchanged diff
+        if (fabs(diff_data[0] - previous_local_diff) < eps * 0.001) {
+            same_local_diff_cnt++;
+        } else {
+            same_local_diff_cnt = 0;
+            previous_local_diff = diff_data[0];
+        }
+
+        //track unchanged swapping diff
+        if(fabs(diff_data[0] - second_last_local_diff) < eps * 0.001){
+            swap_local_diff_cnt++;
+        } else {
+            swap_local_diff_cnt = 0;
+        }
+        second_last_local_diff = last_local_diff;
+        last_local_diff = diff_data[0];
         if (iter % 100 == 0)
-            LOG(INFO) << "global iter = " << iter << ", diff = "
-                      << diff.host_data()[0];
-        if (diff.host_data()[0] < eps) {
+            LOG(INFO) << "global iter = " << iter << ", total local iter = " << local_iter << ", diff = "
+                      << diff_data[0];
+
+        if ((same_local_diff_cnt >= 10 && fabs(diff_data[0] - 2.0) > eps) || diff_data[0] < eps ||
+            (out_max_iter != -1) && (iter == out_max_iter) ||
+            (swap_local_diff_cnt >= 10 && fabs(diff_data[0] - 2.0) > eps)) {
             rho = calculate_rho(f_val, y, alpha, Cp, Cn);
-        //    std::cout<<"iter num:"<<iter<<std::endl;
+            LOG(INFO) << "global iter = " << iter << ", total local iter = " << local_iter << ", diff = "
+                      << diff_data[0];
+            LOG(INFO) << "training finished";
+            float_type obj = calculate_obj(f_val, alpha, y);
+            LOG(INFO) << "obj = " << obj;
             break;
         }
+//        if (diff.host_data()[0] < eps) {
+//            rho = calculate_rho(f_val, y, alpha, Cp, Cn);
+//        //    std::cout<<"iter num:"<<iter<<std::endl;
+//            break;
+//        }
     }
     
     printf("\n");
@@ -640,4 +679,18 @@ CSMOSolver::smo_kernel(const SyncArray<int> &y, SyncArray<float_type> &f_val, Sy
                        int* working_set_cal_rank_data) const {
     c_smo_solve(y, f_val, alpha, alpha_diff, working_set, Cp, Cn, k_mat_rows, k_mat_diag, row_len, eps, diff, max_iter,
                 cacheIndex, kernel_record, working_set_cal_rank_data);
+}
+
+float_type CSMOSolver::calculate_obj(const SyncArray<float_type> &f_val, const SyncArray<float_type> &alpha,
+                                     const SyncArray<int> &y) const {
+    //todo use parallel reduction for gpu and cpu
+    int n_instances = f_val.size();
+    float_type obj = 0;
+    const float_type *f_val_data = f_val.host_data();
+    const float_type *alpha_data = alpha.host_data();
+    const int *y_data = y.host_data();
+    for (int i = 0; i < n_instances; ++i) {
+        obj += alpha_data[i] - (f_val_data[i] + y_data[i]) * alpha_data[i] * y_data[i] / 2;
+    }
+    return -obj;
 }
