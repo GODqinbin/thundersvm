@@ -32,7 +32,7 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
     int q = ws_size / 2;
 	std::cout<<"ws_size:"<<ws_size<<std::endl;
     long cache_row_size = n_instances;
-    size_t cache_line_num = 1000;
+    size_t cache_line_num = 10000;
 
     long hbw_size = (long)16 * 1024 * 1024 * 1024;
     //std::cout<<"size:"<<hbw_size<<std::endl;
