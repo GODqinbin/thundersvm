@@ -17,7 +17,7 @@ void
 CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<float_type> &alpha, float_type &rho,
                   SyncArray<float_type> &f_val, float_type eps, float_type Cp, float_type Cn, int ws_size) const {
 	TIMED_SCOPE(timerObj, "solve");
-
+    int numT = omp_get_number_threads();
     //avoid infinite loop of repeated local diff
     int same_local_diff_cnt = 0;
     float_type previous_local_diff = INFINITY;
@@ -454,28 +454,55 @@ TIMED_SCOPE(timerObj, "f sort");
             }
             else{
       //          std::cout<<"fulled"<<std::endl;
-#pragma omp parallel for schedule(guided)
-                for(int i = 0; i < wsclh_size; i++){
-                    int wsi = working_set_cal_last_half[i];
-                    //int tid = omp_get_thread_num();
-                    //int nthread = omp_get_num_threads();
-                    int nstep = (n_instances + wsclh_size - 1) / wsclh_size;
+#pragma omp parallel num_threads(numT)
+                {
+                    int tid = omp_get_thread_num();
+                    size_t wstep = (wsclh_size + numT - 1) / numT;
+                    size_t wbegin = min(tid * wstep, wsclh_size - 1);
+                    size_t wend = min((tid + 1) * wstep, wsclh_size - 1);
+                    int nstep = (n_instances + numT - 1) / numT;
                     int sbegin = min(i * nstep, n_instances);
                     int send = min((i + 1) * nstep, n_instances);
-                    for(int j = sbegin; j < send; j++){
+                    for(int i = wbegin; i < wend; i++){
+                        int wsi = working_set_cal_last_half[i];
+                        for(int j = sbegin; j < send; j++){
 //                    for(int j = 0; j < n_instances; j++){
-                        if(in_cache[j] && (used_num[j] < used_num[wsi]) && (in_choose[j] == 0)){
-                            in_cache[j] = false;
-                            //copy_num++;
-				            memcpy(kernel_record + cacheIndex[j] * cache_row_size,
-                                   k_mat_rows + (long)(q + i) * n_instances,
-                                   n_instances * sizeof(float));
-                            in_cache[wsi] = true;
-                            cacheIndex[wsi] = cacheIndex[j];
-                            break;
+                            if(in_cache[j] && (used_num[j] < used_num[wsi]) && (in_choose[j] == 0)){
+                                in_cache[j] = false;
+                                //copy_num++;
+                                memcpy(kernel_record + cacheIndex[j] * cache_row_size,
+                                       k_mat_rows + (long)(q + i) * n_instances,
+                                       n_instances * sizeof(float));
+                                in_cache[wsi] = true;
+                                cacheIndex[wsi] = cacheIndex[j];
+                                break;
+                            }
                         }
                     }
+
                 }
+//#pragma omp parallel for schedule(guided)
+//                for(int i = 0; i < wsclh_size; i++){
+//                    int wsi = working_set_cal_last_half[i];
+//                    //int tid = omp_get_thread_num();
+//                    //int nthread = omp_get_num_threads();
+//                    int nstep = (n_instances + wsclh_size - 1) / wsclh_size;
+//                    int sbegin = min(i * nstep, n_instances);
+//                    int send = min((i + 1) * nstep, n_instances);
+//                    for(int j = sbegin; j < send; j++){
+////                    for(int j = 0; j < n_instances; j++){
+//                        if(in_cache[j] && (used_num[j] < used_num[wsi]) && (in_choose[j] == 0)){
+//                            in_cache[j] = false;
+//                            //copy_num++;
+//				            memcpy(kernel_record + cacheIndex[j] * cache_row_size,
+//                                   k_mat_rows + (long)(q + i) * n_instances,
+//                                   n_instances * sizeof(float));
+//                            in_cache[wsi] = true;
+//                            cacheIndex[wsi] = cacheIndex[j];
+//                            break;
+//                        }
+//                    }
+//                }
             }
 
 
