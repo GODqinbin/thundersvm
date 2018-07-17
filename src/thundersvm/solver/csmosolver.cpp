@@ -17,7 +17,7 @@ void
 CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<float_type> &alpha, float_type &rho,
                   SyncArray<float_type> &f_val, float_type eps, float_type Cp, float_type Cn, int ws_size) const {
 	TIMED_SCOPE(timerObj, "solve");
-    int numT = omp_get_number_threads();
+    int numT = omp_get_num_threads();
     //avoid infinite loop of repeated local diff
     int same_local_diff_cnt = 0;
     float_type previous_local_diff = INFINITY;
