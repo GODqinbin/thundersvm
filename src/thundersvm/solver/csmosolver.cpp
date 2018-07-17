@@ -457,12 +457,12 @@ TIMED_SCOPE(timerObj, "f sort");
 #pragma omp parallel num_threads(numT)
                 {
                     int tid = omp_get_thread_num();
-                    size_t wstep = (wsclh_size + numT - 1) / numT;
-                    size_t wbegin = min(tid * wstep, wsclh_size - 1);
-                    size_t wend = min((tid + 1) * wstep, wsclh_size - 1);
+                    int wstep = (wsclh_size + numT - 1) / numT;
+                    int wbegin = min(tid * wstep, wsclh_size - 1);
+                    int wend = min((tid + 1) * wstep, wsclh_size - 1);
                     int nstep = (n_instances + numT - 1) / numT;
-                    int sbegin = min(i * nstep, n_instances);
-                    int send = min((i + 1) * nstep, n_instances);
+                    int sbegin = min(tid * nstep, n_instances);
+                    int send = min((tid + 1) * nstep, n_instances);
                     for(int i = wbegin; i < wend; i++){
                         int wsi = working_set_cal_last_half[i];
                         for(int j = sbegin; j < send; j++){
