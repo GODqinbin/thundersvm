@@ -20,6 +20,8 @@ struct SvmParam {
         epsilon = 0.001;
         nu = 0.5;
         probability = false;
+        degree = 3;
+        coef0 = 0;
         nr_weight = 0;
     }
 
