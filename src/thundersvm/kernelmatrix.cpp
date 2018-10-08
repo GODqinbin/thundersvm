@@ -122,10 +122,10 @@ void KernelMatrix::get_rows(vector<int> &working_set_cal,
             //do nothing
             break;
         case SvmParam::POLY:
-            poly_kernel(kernel_rows, param.gamma, param.coef0, param.degree, k_mat_rows_size);
+            poly_kernel(kernel_rows, param.gamma, param.coef0, param.degree, working_set_cal.size() * n_instances_);
             break;
         case SvmParam::SIGMOID:
-            sigmoid_kernel(kernel_rows, param.gamma, param.coef0, k_mat_rows_size);
+            sigmoid_kernel(kernel_rows, param.gamma, param.coef0, working_set_cal.size() * n_instances_);
             break;
     }
 }
