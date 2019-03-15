@@ -6,6 +6,11 @@ build/bin/thundersvm-train -c 4 -g 0.5 ../../dataset2/real-sim > log/real-sim.lo
 build/bin/thundersvm-train -c 10 -g 0.5 ../../dataset2/w8a > log/w8a.log
 #build/bin/thundersvm-train -c 10 -g 0.002 ../../dataset2/cifar10.libsvm > log/cifar10.log
 build/bin/thundersvm-train -c 1 -g 0.3 ../../dataset2/connect-4 > log/connect-4.log
+#build/bin/thundersvm-train -c 10 -g 0.5 ../../datasetqb/rcv1s2 > log/rcv1s2.log
+#build/bin/thundersvm-train -c 10 -g 0.5 ../../datasetqb/mediamill > log/mediamill.log
+#build/bin/thundersvm-train -c 3 -g 1 ../../datasetqb/covtype.libsvm.binary > log/covtype-binary.log
+#build/bin/thundersvm-train -c 1000 -g 0.006 ../../dataset2/mnist8m.scale > log/mnist8m.log
+#build/bin/thundersvm-train -c 10 -g 0.5 ../../datasetqb/skin_nonskin > log/skin.log
 #build/bin/thundersvm-train -c 4 -g 0.5 ../../dataset2/news20.scale > log/news20.scale.log
 #build/bin/thundersvm-train -c 0.01 -g 1 ../../dataset2/epsilon_normalized > log/epsilon.log
 #build/bin/thundersvm-train -c 1000 -g 0.006 ../../dataset2/mnist8m.scale > log/mnist8m.log

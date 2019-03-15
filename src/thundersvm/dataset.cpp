@@ -17,6 +17,117 @@ inline char *findlastline(char *ptr, char *begin) {
     return ptr;
 }
 
+void DataSet::load_from_multi_label_file(string file_name){
+    LOG(INFO)<<"loading dataset from file \""<<file_name<<"\"";
+    multi_y_.clear();
+    instances_.clear();
+    max_multi_label_ = 0;
+    total_count_ = 0;
+    n_features_ = 0;
+    std::ifstream ifs(file_name, std::ifstream::binary);
+    CHECK(ifs.is_open()) << "file " << file_name << " not found";
+
+    //std::array<char, 2 << 20> buffer{}; //16M
+    int buffer_size = 16 << 20;
+    char* buffer = (char *)malloc(buffer_size);
+    const int nthread = omp_get_max_threads();
+
+    while (ifs) {
+        char *head=buffer;
+        ifs.read(buffer, buffer_size);
+        //char *head = buffer.data();
+        size_t size = ifs.gcount();
+        vector<vector<vector<int>>> y_thread(nthread);
+        vector<node2d> instances_thread(nthread);
+
+        vector<int> local_feature(nthread, 0);
+#pragma omp parallel num_threads(nthread)
+        {
+            //get working area of this thread
+            int tid = omp_get_thread_num();
+            size_t nstep = (size + nthread - 1) / nthread;
+            size_t sbegin = min(tid * nstep, size - 1);
+            size_t send = min((tid + 1) * nstep, size - 1);
+            char *pbegin = findlastline(head + sbegin, head);
+            char *pend = findlastline(head + send, head);
+
+            //move stream start position to the end of last line
+            if (tid == nthread - 1) ifs.seekg(pend - head - send, std::ios_base::cur);
+
+            //read instances line by line
+            char *lbegin = pbegin;
+            char *lend = lbegin;
+            while (lend != pend) {
+                //get one line
+                lend = lbegin + 1;
+                while (lend != pend && *lend != '\n' && *lend != '\r') {
+                    ++lend;
+                }
+                string line(lbegin, lend);
+                stringstream ss(line);
+
+                //read label of an instance
+                y_thread[tid].emplace_back();
+
+                int label;
+                while (ss >> label) {
+                    if(label > max_multi_label_)
+                        max_multi_label_ = label;
+                    y_thread[tid].back().push_back(label);
+                    if (ss.peek() == ',')
+                        ss.ignore();
+                    if(ss.peek() == ' ')
+                        break;
+                }
+
+                //read features of an instance
+                instances_thread[tid].emplace_back();
+                string tuple;
+                while (ss >> tuple) {
+                    int i;
+                    float_type v;
+                    CHECK_EQ(sscanf(tuple.c_str(), "%d:%f", &i, &v), 2) << "read error, using [index]:[value] format";
+                    instances_thread[tid].back().emplace_back(i, v);
+                    if (i > local_feature[tid]) local_feature[tid] = i;
+                };
+
+                //read next instance
+                lbegin = lend;
+            }
+        }
+        for (int i = 0; i < nthread; i++) {
+            if (local_feature[i] > n_features_)
+                n_features_ = local_feature[i];
+            total_count_ += instances_thread[i].size();
+        }
+        for (int i = 0; i < nthread; i++) {
+            this->multi_y_.insert(multi_y_.end(), y_thread[i].begin(), y_thread[i].end());
+            this->instances_.insert(instances_.end(), instances_thread[i].begin(), instances_thread[i].end());
+        }
+    }
+    LOG(INFO)<<"#instances = "<<this->n_instances()<<", #features = "<<this->n_features();
+    free(buffer);
+}
+
+int DataSet::init_y_id(int id){
+    y_.clear();
+    for(int i = 0; i < total_count_; i++){
+        if (std::find(multi_y_[i].begin(), multi_y_[i].end(),id)!= multi_y_[i].end()){
+            y_.push_back(1);
+        }
+        else
+            y_.push_back(0);
+    }
+//    std::cout<<"y:";
+//    for(int i = 0; i < y_.size(); i++)
+//        std::cout<<y_[i]<<",";
+    std::cout<<std::endl;
+    if((std::find(y_.begin(), y_.end(), 0) == y_.end()) || (std::find(y_.begin(), y_.end(), 1) == y_.end()))
+        return 0;
+    else
+        return 1;
+}
+
 void DataSet::load_from_file(string file_name) {
     LOG(INFO)<<"loading dataset from file \""<<file_name<<"\"";
     y_.clear();
@@ -187,6 +298,10 @@ size_t DataSet::n_instances() const {//return the total number of instances
 
 size_t DataSet::n_features() const {
     return n_features_;
+}
+
+int DataSet::max_multi_label() const{
+    return max_multi_label_;
 }
 
 const DataSet::node2d &DataSet::instances() const {//return all the instances

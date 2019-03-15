@@ -35,6 +35,9 @@ public:
     ///load dataset from file
     void load_from_file(string file_name);
 
+    void load_from_multi_label_file(string file_name);
+
+    int init_y_id(int id);
     ///load dataset from python
     void load_from_python(float *y, char **x, int len);
 
@@ -47,6 +50,7 @@ public:
 
     size_t n_classes() const;
 
+    int max_multi_label() const;
     ///the number of instances for each class
     const vector<int> &count() const;
 
@@ -76,6 +80,8 @@ public:
 
 private:
     vector<float_type> y_;
+    vector<vector<int>> multi_y_;
+    int max_multi_label_;
     node2d instances_;
     size_t total_count_;
     size_t n_features_;
