@@ -103,7 +103,7 @@ include_directories(${COMMON_INCLUDES})
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/thundersvm)
 
 
-set(PROJECT_TEST_NAME ${PROJECT_NAME}-test)
-add_subdirectory(${PROJECT_SOURCE_DIR}/src/test)
-add_custom_target(runtest
-        COMMAND ${PROJECT_TEST_NAME})
+#set(PROJECT_TEST_NAME ${PROJECT_NAME}-test)
+#add_subdirectory(${PROJECT_SOURCE_DIR}/src/test)
+#add_custom_target(runtest
+#        COMMAND ${PROJECT_TEST_NAME})
