@@ -13,11 +13,20 @@ using namespace svm_kernel;
 
 //extern long memory_size;
 //extern long ins_mem_size;
+int hit_num = 0;
+int miss_num = 0;
+//int copy_num = 0;
+//int new_miss_num = 0;
 void
 CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<float_type> &alpha, float_type &rho,
                   SyncArray<float_type> &f_val, float_type eps, float_type Cp, float_type Cn, int ws_size) const {
 	TIMED_SCOPE(timerObj, "solve");
-    int numT = omp_get_num_threads();
+
+	int out_max_iter = 50000;
+    int numT = 20;
+
+    int divide = 50;
+    int is_front = -1;
     //avoid infinite loop of repeated local diff
     int same_local_diff_cnt = 0;
     float_type previous_local_diff = INFINITY;
@@ -28,11 +37,35 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
 
 	int n_instances = k_mat.n_instances();
 	std::cout<<"instances:"<<n_instances<<std::endl;
-        bool use_hbw = 0;
+
+    int lfu_hit_num = 0;
+    int lru_hit_num = 0;
+    int lru_hit_num_last_time = 0;
+    int lfu_hit_num_last_time = 0;
+//    vector<vector<int>> reuse_dis(n_instances);
+//    int reuse_dis[n_instances];
+    int *reuse_dis = new int[n_instances];
+    memset(reuse_dis, -1, n_instances * sizeof(int));
+    int seg_size[100]; // 1-5, 6-10...
+    memset(seg_size, 0, 100 * sizeof(int));
+    bool use_lru = 0;
+
+
+
+
+//	vector<int> hit_iter[n_instances];
+//	vector<int> miss_iter[n_instances];
+
+//    bool* shown= new bool [n_instances];
+//    memset(shown, 0, sizeof(bool) * n_instances);
+	bool use_hbw = 0;
     int q = ws_size / 2;
 	std::cout<<"ws_size:"<<ws_size<<std::endl;
     long cache_row_size = n_instances;
-    size_t cache_line_num = 10000;
+    size_t cache_line_num = 5000;
+
+    int seg_iter_size = cache_line_num / 500;
+    int n_seg_per_iter = 2 * seg_iter_size / 5;
 
     long hbw_size = (long)16 * 1024 * 1024 * 1024;
     //std::cout<<"size:"<<hbw_size<<std::endl;
@@ -107,6 +140,12 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
 	//int hit_num = 0;
 	//int miss_num = 0;
 	//int copy_num = 0;
+
+
+    int *time_used = new int[cache_line_num];
+    memset(time_used, -1, sizeof(int) * cache_line_num);
+    int *insId = new int[cache_line_num];
+
     memset(used_num, 0, sizeof(int) * n_instances);
     memset(in_cache, 0, sizeof(bool) * n_instances);
 
@@ -116,6 +155,8 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
         f_idx_data[i] = i;
     }
     init_f(alpha, y, k_mat, f_val);
+    int iter = 0;
+    int thre = 0;
     LOG(INFO) << "training start";
 {
 	TIMED_SCOPE(timerObj, "train record time");
@@ -129,7 +170,7 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
     vector <int> recal_first_half_kernel;
 //    float_type *f_idx2sort_data = f_idx2sort.host_data();
 //    float_type *f_val2sort_data = f_val2sort.host_data();
-    for (int iter = 0;; ++iter) {
+    for (iter = 1;; ++iter) {
         //select working set
 {
 	TIMED_SCOPE(timerObj, "f copy");
@@ -141,7 +182,7 @@ TIMED_SCOPE(timerObj, "f sort");
         sort_f(f_val2sort, f_idx2sort);
 }
         vector<int> ws_indicator(n_instances, 0);
-        if (0 == iter) {
+        if (1 == iter) {
 	{
 		TIMED_SCOPE(timerObj, "select working set");
             select_working_set(ws_indicator, f_idx2sort, y, alpha, Cp, Cn, working_set);
@@ -170,8 +211,13 @@ TIMED_SCOPE(timerObj, "f sort");
         for(int i = 0; i < ws_size; i++) {
             used_num[working_set_data[i]]++;
             in_choose[working_set_data[i]] = 1;
+//            shown[working_set_data[i]] = 1;
+
+            reuse_dis[working_set_data[i]]=iter;
+
         }
 
+                miss_num+=ws_size;
 //            for(int i = 0; i < ws_size; i++){
 //                int wsi = working_set_data[i];
 //
@@ -202,47 +248,91 @@ TIMED_SCOPE(timerObj, "f sort");
                 if(free_num >  ws_size){
 #pragma omp parallel for
                     for(int i = 0; i < ws_size; i++){
-                        //miss_num++;
-			//copy_num++;
-			memcpy(kernel_record + (free_cache_index + i) * cache_row_size,
+//                        miss_num++;
+//                        copy_num++;
+			            memcpy(kernel_record + (long)(free_cache_index + i) * cache_row_size,
                                k_mat_rows + (long)i * n_instances,
                                n_instances * sizeof(float_type));
                         int wsi = working_set_data[i];
                         in_cache[wsi] = true;
                         cacheIndex[wsi] = free_cache_index + i;
+
+                        insId[free_cache_index + i] = wsi;
+                        time_used[free_cache_index + i] = iter;
                     }
                     free_cache_index += ws_size;
                 }
                 else{
 #pragma omp parallel for
                     for(int i = 0; i < free_num; i++){
-                        //miss_num++;
-			//copy_num++;
-			memcpy(kernel_record + (free_cache_index + i) * cache_row_size,
+//                        miss_num++;
+//                        copy_num++;
+			            memcpy(kernel_record + (long)(free_cache_index + i) * cache_row_size,
                                k_mat_rows + (long)i * n_instances,
                                n_instances * sizeof(float_type));
                         int wsi = working_set_data[i];
                         in_cache[wsi] = true;
                         cacheIndex[wsi] = free_cache_index + i;
+
+                        insId[free_cache_index + i] = wsi;
+                        time_used[free_cache_index + i] = iter;
                     }
                     free_cache_index += free_num;
                     cache_full = true;
-                    for(int i = free_num; i < ws_size; i++){
-                        //miss_num++;
-			int wsi = working_set_data[i];
-                        for(int j = 0; j < n_instances; j++){
-                            if(in_cache[j] && (used_num[j] < used_num[wsi]) && (in_choose[j] == 0)){
-                                in_cache[j] = false;
-                                //copy_num++;
-				memcpy(kernel_record + cacheIndex[j] * cache_row_size,
-                                       k_mat_rows + (long)i * n_instances,
-                                       n_instances * sizeof(float));
+
+//                    if((iter - divide) * is_front < 0) {
+                        for (int i = free_num; i < ws_size; i++) {
+//                            miss_num++;
+                            int wsi = working_set_data[i];
+                            for (int j = 0; j < n_instances; j++) {
+                                if (in_cache[j] && (used_num[j] < (used_num[wsi] - thre)) && (in_choose[j] == 0)) {
+                                    in_cache[j] = false;
+//                                    copy_num++;
+                                    memcpy(kernel_record + (long)cacheIndex[j] * cache_row_size,
+                                           k_mat_rows + (long) i * n_instances,
+                                           n_instances * sizeof(float));
+                                    in_cache[wsi] = true;
+                                    cacheIndex[wsi] = cacheIndex[j];
+
+                                    insId[cacheIndex[j]] = wsi;
+                                    time_used[cacheIndex[j]] = iter;
+                                    break;
+                                }
+                            }
+                        }
+//                    }
+                    /*
+                    else {
+                        for (int i = free_num; i < ws_size; i++) {
+                            miss_num++;
+                            int wsi = working_set_data[i];
+                            int min_idx = -1;
+                            int min = time_used[0] + 1;
+                            for (int j = 0; j < cache_line_num; j++) {
+                                if ((time_used[j] < min) && (in_choose[insId[j]] == 0)) {
+                                    min = time_used[j];
+                                    min_idx = j;
+                                }
+                            }
+                            //int min_idx = get_min_idx(time_used, cache_line_num);
+
+                            //if(in_choose[insId[min_idx]] == 0) {
+                            if (min_idx != -1) {
+                                in_cache[insId[min_idx]] = false;
+                                copy_num++;
+                                memcpy(kernel_record + min_idx * cache_row_size, k_mat_rows + i * n_instances,
+                                       n_instances *
+                                       sizeof(float_type));
                                 in_cache[wsi] = true;
-                                cacheIndex[wsi] = cacheIndex[j];
-                                break;
+                                cacheIndex[wsi] = min_idx;
+
+                                insId[min_idx] = wsi;
+                                time_used[min_idx] = iter;
                             }
                         }
                     }
+                    */
+
                 }
 	}
 #ifdef USE_SIMD
@@ -277,12 +367,12 @@ TIMED_SCOPE(timerObj, "f sort");
             for(int i = 0; i < q; i++){
                 int last_half = working_set_cal_rank_data[i + q];
                 if(last_half != -1) {
-			working_set_cal_rank_data[i] = last_half - q;
+			        working_set_cal_rank_data[i] = last_half - q;
                     //reuse_num_first_half++;
                 }
                 else{
                     working_set_cal_rank_data[i] = -1;
-	    	}
+	    	    }
             }
             //k_mat_rows_first_half.copy_from(k_mat_rows_last_half);
 {
@@ -297,13 +387,21 @@ TIMED_SCOPE(timerObj, "f sort");
             rank = ws_size / 2;
             //int first_off = 0;
             for(int i = q; i < ws_size; i++){
-                    in_choose[working_set_data[i]] = 1;
+                in_choose[working_set_data[i]] = 1;
                 if(in_cache[working_set_data[i]]){
-		//	hit_num++;
+			        hit_num++;
+                    lfu_hit_num++;
+                    lru_hit_num++;
                     working_set_cal_rank_data[i] = -1;
+//                    hit_iter[working_set_data[i]].push_back(iter);
+					time_used[cacheIndex[working_set_data[i]]] = iter;
                     //numOfIn++;
                 }
                 else {
+//                    if(shown[working_set_data[i]])
+//                        new_miss_num++;
+                    miss_num++;
+//                    miss_iter[working_set_data[i]].push_back(iter);
 		//	miss_num++;
                    // if(!first_off){
                    //     first_off = i;
@@ -311,7 +409,13 @@ TIMED_SCOPE(timerObj, "f sort");
                     working_set_cal_rank_data[i] = rank++;
                     working_set_cal_last_half.emplace_back(working_set_data[i]);
                    // working_set_cal_last_half.push_back(working_set_data[i]);
+//                    shown[working_set_data[i]] = 1;
                 }
+
+                if(reuse_dis[working_set_data[i]] != -1) {
+                    seg_size[(iter - reuse_dis[working_set_data[i]] - 1) / 5]++;
+                }
+                reuse_dis[working_set_data[i]] = iter;
             }
 }
     //        std::cout<<"iter"<<iter<<":"<<(float_type)numOfIn/ws_size<<std::endl;
@@ -379,44 +483,36 @@ TIMED_SCOPE(timerObj, "f sort");
                 int free_num = cache_line_num - free_cache_index;
                 //int load_num = min(free_num, working_set_cal_last_half.size());
                 if(free_num >  wsclh_size){
-#pragma omp parallel for
+#pragma omp parallel for num_threads(numT)
                     for(int i = 0; i < wsclh_size; i++){
-                        //copy_num++;
-			memcpy(kernel_record + (free_cache_index + i) * cache_row_size,
+//                        copy_num++;
+			            memcpy(kernel_record + (long)(free_cache_index + i) * cache_row_size,
                                k_mat_rows + (long)(q + i) * n_instances,
                                n_instances * sizeof(float_type));
                         int wsi = working_set_cal_last_half[i];
                         in_cache[wsi] = true;
                         cacheIndex[wsi] = free_cache_index + i;
+
+                        insId[free_cache_index + i] = wsi;
+                        time_used[free_cache_index + i] = iter;
                     }
-
-                    //memcpy(kernel_record + free_cache_index * cache_row_size,
-                    //       k_mat_rows + q * n_instances,
-                    //       working_set_cal_last_half.size() * n_instances * sizeof(float_type));
-
-                    //int free_off = 0;
-
-//#pragma omp simd
-                    //for(int i = 0; i < working_set_cal_last_half.size(); i++){
-                    //    int wsi = working_set_cal_last_half[i];
-                    //    in_cache[wsi] = true;
-                    //    cacheIndex[wsi] = free_cache_index + i;
-                        //free_cache_index++;
-                    //}
 
                     free_cache_index += wsclh_size;
                 }
                 else{
     //                std::cout<<"fulling"<<std::endl;
-#pragma omp parallel for
+#pragma omp parallel for num_threads(numT)
                     for(int i = 0; i < free_num; i++){
-                        //copy_num++;
-			memcpy(kernel_record + (free_cache_index + i) * cache_row_size,
+//                        copy_num++;
+			            memcpy(kernel_record + (long)(free_cache_index + i) * cache_row_size,
                                k_mat_rows + (long)(q + i) * n_instances,
                                n_instances * sizeof(float_type));
                         int wsi = working_set_cal_last_half[i];
                         in_cache[wsi] = true;
                         cacheIndex[wsi] = free_cache_index + i;
+
+                        insId[free_cache_index + i] = wsi;
+                        time_used[free_cache_index + i] = iter;
                     }
 
                     //memcpy(kernel_record + free_cache_index * cache_row_size,
@@ -434,19 +530,91 @@ TIMED_SCOPE(timerObj, "f sort");
 
                     free_cache_index += free_num;
                     cache_full = true;
-                    for(int i = free_num; i < wsclh_size; i++){
-                        int wsi = working_set_cal_last_half[i];
-                        for(int j = 0; j < n_instances; j++){
-                            if(in_cache[j] && (used_num[j] < used_num[wsi]) && (in_choose[j] == 0)){
-                                in_cache[j] = false;
-                                //copy_num++;
-				memcpy(kernel_record + cacheIndex[j] * cache_row_size,
-                                       k_mat_rows + (long)(q + i) * n_instances,
-                                       n_instances * sizeof(float));
-                                in_cache[wsi] = true;
-                                cacheIndex[wsi] = cacheIndex[j];
-                                break;
+//                    if(iter % seg_iter_size == 0) {
+//                        if (!use_lru) {
+//                            std::cout << "1" << std::endl;
+//                            int lru_hit_count_1 = 0;
+//                            for (int i = 0; i < cache_line_num / 2500; i++)
+//                                lru_hit_count_1 += seg_size[i];
+//                            std::cout << "2" << std::endl;
+//                            float lru_hit_ratio_1 = 0.0;
+//
+//                            for(int i = iter/seg_iter_size - 1; ;i++)
+//                            if (iter == seg_iter_size)
+//                                lru_hit_ratio_1 = (float) lru_hit_count_1 / (ws_size + ws_size / 2 * seg_iter_size);
+//                            else
+//                                lru_hit_ratio_1 = (float) lru_hit_count_1 / (ws_size / 2 * seg_iter_size);
+//                            std::cout << "lru hit ratio:" << lru_hit_ratio_1 << std::endl;
+//                            int make_up_dis = cache_line_num / (1 - lru_hit_ratio_1);
+//                            std::cout << "make up dis:" << make_up_dis << std::endl;
+//                            int lru_hit_count_2 = lru_hit_count_1;
+//                            for (int i = cache_line_num / 2500; i < make_up_dis / 2500; i++) {
+//                                lru_hit_count_2 += seg_size[i];
+//                            }
+//                            lru_hit_count_2 += (int) ((float) (make_up_dis - make_up_dis / 2500 * 2500) / 2500 *
+//                                                      seg_size[make_up_dis / 2500]);
+//                            if (lru_hit_count_2 > lfu_hit_num) {
+//                                std::cout << "use lru" << std::endl;
+//                                lru_hit_num_last_time = lru_hit_count_2;
+//                                use_lru = 1;
+//                            }
+//                            memset(seg_size, 0, 100 * sizeof(int));
+//                            memset(reuse_dis, -1, n_instances * sizeof(int));
+//
+//                            lfu_hit_num = 0;
+//                            lru_hit_num = 0;
+//                        } else {
+//                            if (lru_hit_num < lru_hit_num_last_time)
+//                                use_lru = 0;
+//                        }
+//                    }
+//                    if((iter - divide) * is_front < 0) {
+                    if(!use_lru){
+                        for (int i = free_num; i < wsclh_size; i++) {
+                            int wsi = working_set_cal_last_half[i];
+                            for (int j = 0; j < n_instances; j++) {
+                                if (in_cache[j] && (used_num[j] < (used_num[wsi] - thre)) && (in_choose[j] == 0)) {
+                                    in_cache[j] = false;
+//                                    copy_num++;
+                                    memcpy(kernel_record + (long)cacheIndex[j] * cache_row_size,
+                                           k_mat_rows + (long) (q + i) * n_instances,
+                                           n_instances * sizeof(float));
+                                    in_cache[wsi] = true;
+                                    cacheIndex[wsi] = cacheIndex[j];
+
+                                    insId[cacheIndex[j]] = wsi;
+                                    time_used[cacheIndex[j]] = iter;
+                                    break;
+                                }
                             }
+                        }
+                    }
+                    else{
+                        for (int i = free_num; i < wsclh_size; i++) {
+                            int wsi = working_set_cal_last_half[i];
+                            int min_idx = -1;
+                            int min = time_used[0] + 1;
+                            for(int j = 0; j < cache_line_num; j++){
+                                if((time_used[j] < min) && (in_choose[insId[j]] == 0)){
+                                    min = time_used[j];
+                                    min_idx = j;
+                                }
+                            }
+                            //int min_idx = get_min_idx(time_used, cache_line_num);
+
+                            //if(in_choose[insId[min_idx]] == 0) {
+                            if(min_idx != -1){
+                                in_cache[insId[min_idx]] = false;
+//                                copy_num++;
+                                memcpy(kernel_record + (long)min_idx * cache_row_size,
+                                       k_mat_rows + (long)(q + i) * n_instances, n_instances * sizeof(float_type));
+                                in_cache[wsi] = true;
+                                cacheIndex[wsi] = min_idx;
+
+                                insId[min_idx] = wsi;
+                                time_used[min_idx] = iter;
+                            }
+
                         }
                     }
                 }
@@ -454,33 +622,6 @@ TIMED_SCOPE(timerObj, "f sort");
             }
             else{
       //          std::cout<<"fulled"<<std::endl;
-#pragma omp parallel num_threads(numT)
-                {
-                    int tid = omp_get_thread_num();
-                    int wstep = (wsclh_size + numT - 1) / numT;
-                    int wbegin = min(tid * wstep, wsclh_size - 1);
-                    int wend = min((tid + 1) * wstep, wsclh_size - 1);
-                    int nstep = (n_instances + numT - 1) / numT;
-                    int sbegin = min(tid * nstep, n_instances);
-                    int send = min((tid + 1) * nstep, n_instances);
-                    for(int i = wbegin; i < wend; i++){
-                        int wsi = working_set_cal_last_half[i];
-                        for(int j = sbegin; j < send; j++){
-//                    for(int j = 0; j < n_instances; j++){
-                            if(in_cache[j] && (used_num[j] < used_num[wsi]) && (in_choose[j] == 0)){
-                                in_cache[j] = false;
-                                //copy_num++;
-                                memcpy(kernel_record + cacheIndex[j] * cache_row_size,
-                                       k_mat_rows + (long)(q + i) * n_instances,
-                                       n_instances * sizeof(float));
-                                in_cache[wsi] = true;
-                                cacheIndex[wsi] = cacheIndex[j];
-                                break;
-                            }
-                        }
-                    }
-
-                }
 //#pragma omp parallel for schedule(guided)
 //                for(int i = 0; i < wsclh_size; i++){
 //                    int wsi = working_set_cal_last_half[i];
@@ -493,9 +634,9 @@ TIMED_SCOPE(timerObj, "f sort");
 ////                    for(int j = 0; j < n_instances; j++){
 //                        if(in_cache[j] && (used_num[j] < used_num[wsi]) && (in_choose[j] == 0)){
 //                            in_cache[j] = false;
-//                            //copy_num++;
-//				            memcpy(kernel_record + cacheIndex[j] * cache_row_size,
-//                                   k_mat_rows + (long)(q + i) * n_instances,
+//                            copy_num++;
+//                            memcpy(kernel_record + cacheIndex[j] * cache_row_size,
+//                                   k_mat_rows + (q + i) * n_instances,
 //                                   n_instances * sizeof(float));
 //                            in_cache[wsi] = true;
 //                            cacheIndex[wsi] = cacheIndex[j];
@@ -503,7 +644,236 @@ TIMED_SCOPE(timerObj, "f sort");
 //                        }
 //                    }
 //                }
-            }
+                if(iter % seg_iter_size == 0) {
+                    if (!use_lru) {
+                        int lru_hit_count_1 = 0;
+//                        std::cout << "1" << std::endl;
+                        for (int i = 0; i < cache_line_num / 2500; i++)
+                            lru_hit_count_1 += seg_size[i];
+//                        std::cout << "2" << std::endl;
+                        float lru_hit_ratio_1 = 0.0;
+//                        int total_access = 0;
+//                        for(int i = 0; i < n_seg_per_iter; i++)
+//                            total_access += seg_size[i];
+                        if (iter == seg_iter_size)
+                            lru_hit_ratio_1 = (float) lru_hit_count_1 / (ws_size + ws_size / 2 * seg_iter_size);
+                        else
+                            lru_hit_ratio_1 = (float) lru_hit_count_1 / (ws_size / 2 * seg_iter_size);
+//                        lru_hit_ratio_1 = (float) lru_hit_count_1 / total_access;
+//                        std::cout << "lru hit ratio:" << lru_hit_ratio_1 << std::endl;
+                        if(lru_hit_ratio_1 == 1){
+                            use_lru = 1;
+                        }
+                        else {
+                            if(lru_hit_count_1 > lfu_hit_num){
+//                                std::cout << "use lru" << std::endl;
+                                lru_hit_num_last_time = lru_hit_count_1;
+                                lfu_hit_num_last_time = lfu_hit_num;
+                                use_lru = 1;
+                            }
+//                            int make_up_dis = cache_line_num / (1 - lru_hit_ratio_1);
+//                            std::cout << "make up dis:" << make_up_dis << std::endl;
+//                            int lru_hit_count_2 = lru_hit_count_1;
+//                            for (int i = cache_line_num / 2500; i < make_up_dis / 2500; i++) {
+//                                lru_hit_count_2 += seg_size[i];
+//                            }
+//                            lru_hit_count_2 += (int) ((float) (make_up_dis - make_up_dis / 2500 * 2500) / 2500 *
+//                                                      seg_size[make_up_dis / 2500]);
+//                            std::cout << "lru hit count:" << lru_hit_count_2 << std::endl;
+//                            std::cout << "lfu hit count:" << lfu_hit_num << std::endl;
+//                            if (lru_hit_count_2 > lfu_hit_num) {
+////                            if(lru_hit_count_1 > lfu_hit_num){
+//                                std::cout << "use lru" << std::endl;
+//                                lru_hit_num_last_time = lru_hit_count_2;
+////                                lru_hit_num_last_time = lru_hit_count_1;
+//                                use_lru = 1;
+//                            }
+                        }
+
+//                        else{
+//                            int lru_hit_count_2 = (ws_size / 2 * seg_iter_size) * lru_hit_ratio_1;
+//                            if (lru_hit_count_2 > lfu_hit_num) {
+//                                std::cout << "use lru" << std::endl;
+//                                lru_hit_num_last_time = lru_hit_count_2;
+//                                use_lru = 1;
+//                            }
+//                        }
+
+
+//                        memset(reuse_dis, -1, n_instances * sizeof(int));
+
+                    }
+                    else{
+//                        if(lru_hit_num < lru_hit_num_last_time)
+                        if(lru_hit_num < lfu_hit_num_last_time)
+                            use_lru = 0;
+                    }
+                    lfu_hit_num = 0;
+                    lru_hit_num = 0;
+                    memset(seg_size, 0, 100 * sizeof(int));
+                }
+                if(!use_lru){
+//                if((iter - divide) * is_front < 0){
+//#pragma omp parallel num_threads(numT)
+//                    {
+//                        int tid = omp_get_thread_num();
+//                        int wstep = (wsclh_size + numT - 1) / numT;
+//                        int wbegin = min(tid * wstep, wsclh_size - 1);
+//                        int wend = min((tid + 1) * wstep, wsclh_size - 1);
+//                        int nstep = (n_instances + numT - 1) / numT;
+//                        int sbegin = min(tid * nstep, n_instances);
+//                        int send = min((tid + 1) * nstep, n_instances);
+//                        for (int i = wbegin; i < wend; i++) {
+//                            int wsi = working_set_cal_last_half[i];
+//                            for (int j = sbegin; j < send; j++) {
+////                    for(int j = 0; j < n_instances; j++){
+//                                if (in_cache[j] && (used_num[j] < (used_num[wsi] - thre)) && (in_choose[j] == 0)) {
+//                                    in_cache[j] = false;
+//                                    copy_num++;
+//                                    memcpy(kernel_record + cacheIndex[j] * cache_row_size,
+//                                           k_mat_rows + (long) (q + i) * n_instances,
+//                                           n_instances * sizeof(float));
+//                                    in_cache[wsi] = true;
+//                                    cacheIndex[wsi] = cacheIndex[j];
+//
+//                                    insId[cacheIndex[j]] = wsi;
+//                                    time_used[cacheIndex[j]] = iter;
+//                                    break;
+//                                }
+//                            }
+//                        }
+//
+//                    }
+
+#pragma omp parallel num_threads(numT)
+                    {
+                        int tid = omp_get_thread_num();
+                        int wstep = (wsclh_size + numT - 1) / numT;
+                        int wbegin = min(tid * wstep, wsclh_size );
+                        int wend = min((tid + 1) * wstep, wsclh_size );
+                        int nstep = (cache_line_num + numT - 1) / numT;
+                        int sbegin = min(tid * nstep, (int)cache_line_num);
+                        int send = min((tid + 1) * nstep, (int)cache_line_num);
+                        for (int i = wbegin; i < wend; i++) {
+                            int wsi = working_set_cal_last_half[i];
+                            for (int j = sbegin; j < send; j++) {
+//                    for(int j = 0; j < n_instances; j++){
+                                if ((used_num[insId[j]] < (used_num[wsi] - thre)) && (in_choose[insId[j]] == 0)) {
+                                    in_cache[insId[j]] = false;
+//                                    copy_num++;
+                                    memcpy(kernel_record + (long)j * cache_row_size,
+                                           k_mat_rows + (long) (q + i) * n_instances,
+                                           n_instances * sizeof(float));
+                                    in_cache[wsi] = true;
+                                    cacheIndex[wsi] = j;
+
+                                    insId[j] = wsi;
+                                    time_used[j] = iter;
+                                    break;
+                                }
+                            }
+                        }
+
+                    }
+
+//#pragma omp parallel for schedule(guided) num_threads(numT)
+//                    for(int i = 0; i < wsclh_size; i++){
+//                        int wsi = working_set_cal_last_half[i];
+//                        //int tid = omp_get_thread_num();
+//                        //int nthread = omp_get_num_threads();
+//                        int nstep = (n_instances + wsclh_size - 1) / wsclh_size;
+//                        int sbegin = min(i * nstep, n_instances);
+//                        int send = min((i + 1) * nstep, n_instances);
+//                        for(int j = sbegin; j < send; j++){
+////                    for(int j = 0; j < n_instances; j++){
+//                            if(in_cache[j] && (used_num[j] < used_num[wsi]) && (in_choose[j] == 0)){
+//                                in_cache[j] = false;
+//                                //copy_num++;
+//                                memcpy(kernel_record + cacheIndex[j] * cache_row_size,
+//                                       k_mat_rows + (q + i) * n_instances,
+//                                       n_instances * sizeof(float));
+//                                in_cache[wsi] = true;
+//                                cacheIndex[wsi] = cacheIndex[j];
+//
+//                                insId[cacheIndex[j]] = wsi;
+//                                time_used[cacheIndex[j]] = iter;
+//                                break;
+//                            }
+//                        }
+//                    }
+                }
+                else{
+//#pragma omp parallel for schedule(guided) num_threads(numT)
+//                    for(int i = 0; i < wsclh_size; i++){
+//                        int wsi = working_set_cal_last_half[i];
+//                        //int tid = omp_get_thread_num();
+//                        //int nthread = omp_get_num_threads();
+//                        int nstep = (cache_line_num + wsclh_size - 1) / wsclh_size;
+//                        int sbegin = min(i * nstep, (int)cache_line_num);
+//                        int send = min((i + 1) * nstep, (int)cache_line_num);
+//
+//                        int min_idx = -1;
+//                        int min;
+//                        if(sbegin != cache_line_num)
+//                            min = time_used[sbegin] + 1;
+////                        int wsi = working_set_cal_last_half[i];
+//
+//                        for(int j = sbegin; j < send; j++){
+//                            if((time_used[j] < min) && (in_choose[insId[j]] == 0)){
+//                                min = time_used[j];
+//                                min_idx = j;
+//                            }
+//                        }
+//                        if(min_idx != -1){
+//                            in_cache[insId[min_idx]] = false;
+////                                    copy_num++;
+//                            memcpy(kernel_record + min_idx * cache_row_size,
+//                                   k_mat_rows + (long)(q + i) * n_instances, n_instances * sizeof(float));
+//                            in_cache[wsi] = true;
+//                            cacheIndex[wsi] = min_idx;
+//
+//                            insId[min_idx] = wsi;
+//                            time_used[min_idx] = iter;
+//                        }
+//                    }
+#pragma omp parallel num_threads(numT)
+                    {
+                        int tid = omp_get_thread_num();
+                        int wstep = (wsclh_size + numT - 1) / numT;
+                        int wbegin = min(tid * wstep, wsclh_size );
+                        int wend = min((tid + 1) * wstep, wsclh_size );
+                        int nstep = (cache_line_num + numT - 1) / numT;
+                        int sbegin = min(tid * nstep, (int)cache_line_num);
+                        int send = min((tid + 1) * nstep, (int)cache_line_num);
+                        if(sbegin != cache_line_num) {
+                            for (int i = wbegin; i < wend; i++) {
+                                int min_idx = -1;
+                                int min = time_used[sbegin] + 1;
+                                int wsi = working_set_cal_last_half[i];
+                                for (int j = sbegin; j < send; j++) {
+
+                                    if ((time_used[j] < min) && (in_choose[insId[j]] == 0)) {
+                                        min = time_used[j];
+                                        min_idx = j;
+                                    }
+                                }
+
+                                if (min_idx != -1) {
+                                    in_cache[insId[min_idx]] = false;
+//                                    copy_num++;
+                                    memcpy(kernel_record + (long)min_idx * cache_row_size,
+                                           k_mat_rows + (long) (q + i) * n_instances, n_instances * sizeof(float));
+                                    in_cache[wsi] = true;
+                                    cacheIndex[wsi] = min_idx;
+
+                                    insId[min_idx] = wsi;
+                                    time_used[min_idx] = iter;
+                                }
+                            }
+                        }
+
+                    }
+                }
 
 
 	}
@@ -533,7 +903,8 @@ TIMED_SCOPE(timerObj, "f sort");
                       << diff_data[0];
 
         if ((same_local_diff_cnt >= 10 && fabs(diff_data[0] - 2.0) > eps) || diff_data[0] < eps ||
-            (swap_local_diff_cnt >= 10 && fabs(diff_data[0] - 2.0) > eps)) {
+            (iter == out_max_iter) ||
+			(swap_local_diff_cnt >= 10 && fabs(diff_data[0] - 2.0) > eps)) {
             rho = calculate_rho(f_val, y, alpha, Cp, Cn);
             LOG(INFO) << "global iter = " << iter << ", total local iter = " << local_iter << ", diff = "
                       << diff_data[0];
@@ -546,7 +917,7 @@ TIMED_SCOPE(timerObj, "f sort");
 //            rho = calculate_rho(f_val, y, alpha, Cp, Cn);
 //        //    std::cout<<"iter num:"<<iter<<std::endl;
 //            break;
-//        }
+        }
     }
     
     printf("\n");
@@ -565,13 +936,34 @@ TIMED_SCOPE(timerObj, "f sort");
 	free(in_cache);
 	free(cacheIndex);
 	free(in_choose);
+	delete[] time_used;
+	delete[] insId;
 	//free(k_mat_rows);
 	//free(kernel_record);
     delete[] k_mat_rows;
-        delete[] kernel_record;
+    delete[] kernel_record;
+    delete[] reuse_dis;
+//    delete[] shown;
 
 //    }
     }
+//    std::cout << "iter num:" << iter << std::endl;
+    std::cout<<"hit num:"<<hit_num<<std::endl;
+    std::cout<<"miss num:"<<miss_num<<std::endl;
+//    std::cout<<"copy num:"<<copy_num<<std::endl;
+//    std::cout<<"new miss num:"<<new_miss_num<<std::endl;
+    std::cout<<"hit ratio:"<<1.0 * hit_num / (hit_num + miss_num) << std::endl;
+
+//    for(int i = 0; i < n_instances; i++){
+//        std::cout<<"instance "<<i<<":"<<std::endl;
+//        std::cout<<"hit iter:";
+//        for(int j = 0; j < hit_iter[i].size(); j++)
+//            std::cout<<hit_iter[i][j]<<"\t";
+//        std::cout<<"\n"<<"miss iter:";
+//        for(int j = 0; j < miss_iter[i].size(); j++)
+//            std::cout<<miss_iter[i][j]<<"\t";
+//        std::cout<<std::endl;
+//    }
 	//std::cout<<"hit num:"<<hit_num<<std::endl;
 	//std::cout<<"miss num:"<<miss_num<<std::endl;
 	//std::cout<<"copy num:"<<copy_num<<std::endl;
@@ -708,7 +1100,7 @@ CSMOSolver::smo_kernel(const SyncArray<int> &y, SyncArray<float_type> &f_val, Sy
 }
 
 float_type CSMOSolver::calculate_obj(const SyncArray<float_type> &f_val, const SyncArray<float_type> &alpha,
-                                     const SyncArray<int> &y) const {
+                                      const SyncArray<int> &y) const {
     //todo use parallel reduction for gpu and cpu
     int n_instances = f_val.size();
     float_type obj = 0;
