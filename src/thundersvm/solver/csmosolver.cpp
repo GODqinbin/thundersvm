@@ -64,8 +64,8 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
     long cache_row_size = n_instances;
     size_t cache_line_num = 5000;
 
-    int seg_iter_size = cache_line_num / 500;
-    int n_seg_per_iter = 2 * seg_iter_size / 5;
+    int seg_iter_size = 2 * cache_line_num / 500;
+//    int n_seg_per_iter = 2 * seg_iter_size / 5;
 
     long hbw_size = (long)16 * 1024 * 1024 * 1024;
     //std::cout<<"size:"<<hbw_size<<std::endl;
