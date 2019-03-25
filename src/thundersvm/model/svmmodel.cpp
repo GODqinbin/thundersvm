@@ -270,3 +270,10 @@ void SvmModel::load_from_file(string path) {
         n_sv.host_data()[1] = 0;
     }
 }
+
+void SvmModel::init_cache(int n_instance, int n_cache_line){
+    kernel_value_cache = new float_type[(long) n_cache_line * n_instance];
+    in_cache = new bool[n_instance];
+    cacheIndex = new int[n_instance];
+    insId = new int[n_cache_line];
+}

@@ -115,6 +115,87 @@ void SVC::train(const DataSet &dataset, SvmParam param) {
     }
 }
 
+void SVC::train_with_cache(const DataSet &dataset, SvmParam param, float_type* kernel_value_cache) {
+    TIMED_SCOPE(timerObj, "train");
+    DataSet dataset_ = dataset;
+    dataset_.group_classes();
+    model_setup(dataset_, param);
+
+    vector<SyncArray<float_type>> alpha(n_binary_models);
+    vector<bool> is_sv(dataset_.n_instances(), false);
+
+    int k = 0;
+    for (int i = 0; i < n_classes; ++i) {
+        for (int j = i + 1; j < n_classes; ++j) {
+            train_binary(dataset_, i, j, alpha[k], rho.host_data()[k]);
+            vector<int> original_index = dataset_.original_index(i, j);
+            CHECK_EQ(original_index.size(), alpha[k].size());
+            const float_type *alpha_data = alpha[k].host_data();
+            for (int l = 0; l < alpha[k].size(); ++l) {
+                is_sv[original_index[l]] = is_sv[original_index[l]] || (alpha_data[l] != 0);
+            }
+            k++;
+        }
+    }
+
+    for (int i = 0; i < dataset_.n_classes(); ++i) {
+        vector<int> original_index = dataset_.original_index(i);
+        DataSet::node2d i_instances = dataset_.instances(i);
+        int *n_sv_data = n_sv.host_data();
+        for (int j = 0; j < i_instances.size(); ++j) {
+            if (is_sv[original_index[j]]) {
+                n_sv_data[i]++;
+                sv.push_back(i_instances[j]);
+            }
+        }
+    }
+
+    n_total_sv = sv.size();
+    LOG(INFO) << "#total unique sv = " << n_total_sv;
+    coef.resize((n_classes - 1) * n_total_sv);
+
+    vector<int> sv_start(1, 0);
+    const int *n_sv_data = n_sv.host_data();
+    for (int i = 1; i < n_classes; ++i) {
+        sv_start.push_back(sv_start[i - 1] + n_sv_data[i - 1]);
+    }
+
+    k = 0;
+    float_type *coef_data = coef.host_data();
+    for (int i = 0; i < n_classes; ++i) {
+        for (int j = i + 1; j < n_classes; ++j) {
+            const float_type *alpha_data = alpha[k].host_data();
+            vector<int> original_index = dataset_.original_index(i, j);
+            int ci = dataset_.count()[i];
+            int cj = dataset_.count()[j];
+            int m = sv_start[i];
+            for (int l = 0; l < ci; ++l) {
+                if (is_sv[original_index[l]]) {
+                    coef_data[(j - 1) * n_total_sv + m++] = alpha_data[l];
+                }
+            }
+            m = sv_start[j];
+            for (int l = ci; l < ci + cj; ++l) {
+                if (is_sv[original_index[l]]) {
+                    coef_data[i * n_total_sv + m++] = alpha_data[l];
+                }
+            }
+            k++;
+        }
+    }
+
+    //train probability
+    if (1 == param.probability) {
+        LOG(INFO) << "performing probability train";
+        probA.resize(n_binary_models);
+        probB.resize(n_binary_models);
+        probability_train(dataset_);
+    }
+}
+
+
+
+
 void SVC::train_binary(const DataSet &dataset, int i, int j, SyncArray<float_type> &alpha, float_type &rho) {
     DataSet::node2d ins = dataset.instances(i, j);//get instances of class i and j
     SyncArray<int> y(ins.size());
@@ -134,7 +215,11 @@ void SVC::train_binary(const DataSet &dataset, int i, int j, SyncArray<float_typ
     KernelMatrix k_mat(ins, param);
     int ws_size = min(max2power(ins.size()), 1024);
     CSMOSolver solver;
-    solver.solve(k_mat, y, alpha, rho, f_val, param.epsilon, param.C * c_weight[i], param.C * c_weight[j], ws_size);
+    if(is_train_multi)
+        solver.solve(k_mat, y, alpha, rho, f_val, param.epsilon, param.C * c_weight[i], param.C * c_weight[j], ws_size,
+                 kernel_value_cache, in_cache, cacheIndex, insId);
+    else
+        solver.solve(k_mat, y, alpha, rho, f_val, param.epsilon, param.C * c_weight[i], param.C * c_weight[j], ws_size);
     LOG(INFO) << "rho = " << rho;
     int n_sv = 0;
     y_data = y.host_data();

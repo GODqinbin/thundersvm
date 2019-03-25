@@ -66,6 +66,25 @@ public:
      */
     virtual void load_from_file(string path);
 
+
+    ///init the parameters about cache
+    void init_cache(int n_instances, int n_cache_line);
+
+    ///the cache for kernel values
+    float_type* kernel_value_cache;
+
+    ///whether the instance is in cache
+    bool* in_cache;
+
+    ///index of the cache for each instance
+    int* cacheIndex;
+
+    ///the instance id stored in the cache
+    int* insId;
+
+    ///whether is training multi label
+    bool is_train_multi = 0;
+
 protected:
 
     /**
@@ -117,6 +136,11 @@ protected:
 
     ///only for SVC, maps logical label (0,1,2,...) to real label in dataset (maybe 2,4,5,...)
     vector<int> label;
+
+
+
+
+
 };
 
 #endif //THUNDERSVM_SVMMODEL_H

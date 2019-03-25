@@ -19,6 +19,8 @@ public:
 
     void train(const DataSet &dataset, SvmParam param) override;
 
+    void train_with_cache(const DataSet &dataset, SvmParam param, float_type* kernel_value_cache);
+
     vector<float_type> predict(const DataSet::node2d &instances, int batch_size) override;
 
 protected:

@@ -60,7 +60,6 @@ int main(int argc, char **argv) {
 #ifdef USE_CUDA
         CUDA_CHECK(cudaSetDevice(parser.gpu_id));
 #endif
-
         vector<float_type> predict_y;
         if (parser.do_cross_validation) {
             predict_y = model->cross_validation(train_dataset, parser.param_cmd, parser.nr_fold);

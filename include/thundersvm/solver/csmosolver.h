@@ -16,6 +16,10 @@ public:
     void solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<float_type> &alpha, float_type &rho,
                SyncArray<float_type> &f_val, float_type eps, float_type Cp, float_type Cn, int ws_size) const;
 
+    void solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<float_type> &alpha, float_type &rho,
+               SyncArray<float_type> &f_val, float_type eps, float_type Cp, float_type Cn, int ws_size,
+               float_type* kernel_value_cache, bool* in_cache, int* cacheIndex, int* insId) const;
+
 protected:
     void init_f(const SyncArray<float_type> &alpha, const SyncArray<int> &y, const KernelMatrix &k_mat,
                 SyncArray<float_type> &f_val) const;
