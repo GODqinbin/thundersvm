@@ -273,7 +273,9 @@ void SvmModel::load_from_file(string path) {
 
 void SvmModel::init_cache(int n_instance, int n_cache_line){
     kernel_value_cache = new float_type[(long) n_cache_line * n_instance];
+    kernel_value_order = new int[(long) n_cache_line * n_instance];
     in_cache = new bool[n_instance];
+    memset(in_cache, 0, sizeof(bool) * n_instance);
     cacheIndex = new int[n_instance];
     insId = new int[n_cache_line];
 }

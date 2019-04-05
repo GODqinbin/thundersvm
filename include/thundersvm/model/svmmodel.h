@@ -73,6 +73,9 @@ public:
     ///the cache for kernel values
     float_type* kernel_value_cache;
 
+    ///the map order of the origin dataset in the kernel value cache
+    int* kernel_value_order;
+
     ///whether the instance is in cache
     bool* in_cache;
 
@@ -84,6 +87,15 @@ public:
 
     ///whether is training multi label
     bool is_train_multi = 0;
+
+    ///whether is the first iteration
+    bool global_first = 1;
+
+    ///whether cache is full
+    bool cache_full = 0;
+
+    ///the index of the free part
+    int free_cache_index = 0;
 
 protected:
 

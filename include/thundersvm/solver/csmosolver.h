@@ -7,7 +7,14 @@
 
 #include <thundersvm/thundersvm.h>
 #include <thundersvm/kernelmatrix.h>
-
+//#include <thrust/iterator/permutation_iterator.h>
+//#include "thrust/reduce.h"
+//#include <thrust/adjacent_difference.h>
+//#include <thrust/execution_policy.h>
+//#include <thrust/sequence.h>
+//#include <thrust/sort.h>
+//#include <thrust/binary_search.h>
+//#include <thrust/device_vector.h>
 /**
  * @brief C-SMO solver for SVC, SVR and OneClassSVC
  */
@@ -18,7 +25,9 @@ public:
 
     void solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<float_type> &alpha, float_type &rho,
                SyncArray<float_type> &f_val, float_type eps, float_type Cp, float_type Cn, int ws_size,
-               float_type* kernel_value_cache, bool* in_cache, int* cacheIndex, int* insId) const;
+               float_type* kernel_value_cache, bool* in_cache, int* cacheIndex, int* insId,
+               bool& global_first, bool& cache_full, int& free_cache_index, int* insMap,
+               int* kernel_value_order, int* origin_map_order) const;
 
 protected:
     void init_f(const SyncArray<float_type> &alpha, const SyncArray<int> &y, const KernelMatrix &k_mat,
@@ -62,6 +71,20 @@ protected:
                            int *cacheIndex,
                            float *kernel_record,
                            int* working_set_cal_rank_data) const;
+
+    void
+    smo_kernel(const SyncArray<int> &y, SyncArray<float_type> &f_val, SyncArray<float_type> &alpha,
+               SyncArray<float_type> &alpha_diff,
+               const SyncArray<int> &working_set, float_type Cp, float_type Cn,
+               float_type* k_mat_rows,
+               const SyncArray<float_type> &k_mat_diag, int row_len, float_type eps,
+               SyncArray<float_type> &diff,
+               int max_iter,
+               int *cacheIndex,
+               float *kernel_record,
+               int* working_set_cal_rank_data,
+               int* working_set_data,
+               int* kernel_value_order) const;
 };
 
 #endif //THUNDERSVM_CSMOSOLVER_H

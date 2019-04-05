@@ -197,6 +197,11 @@ namespace svm_kernel {
                     kIwsI[tid] = k_mat_rows[(long)row_len * wscri + working_set[tid]];
                 }
             }
+//            std::cout<<"kIwsI:";
+//            for(int tid = 0; tid < ws_size; tid++){
+//                std::cout<<kIwsI[tid]<<" ";
+//            }
+//            std::cout<<std::endl;
             float_type low_value = -INFINITY;
             for (int tid = 0; tid < ws_size; ++tid) {
                 if (is_I_low(a[tid], y[tid], Cp, Cn))
@@ -249,6 +254,14 @@ namespace svm_kernel {
 //            if (tid == j2)
             a[j2] -= l * y[j2];
 
+//            std::cout<<"l:"<<l<<std::endl;
+//
+//            std::cout<<"in smo_kernel f before update:";
+//            for(int tid = 0; tid < ws_size; tid++){
+//                std::cout<<f[tid]<<" ";
+//            }
+//            std::cout<<std::endl;
+
             int wsj2 = working_set[j2];
             int wscrj2 = working_set_cal_rank_data[j2];
             if(wscrj2 == -1){
@@ -264,7 +277,11 @@ namespace svm_kernel {
                     f[tid] -= l * (kJ2wsI - kIwsI[tid]);
                 }
             }
-
+//            std::cout<<"in smo_kernel f:";
+//            for(int tid = 0; tid < ws_size; tid++){
+//                std::cout<<f[tid]<<" ";
+//            }
+//            std::cout<<std::endl;
             numOfIter++;
         }
     }
@@ -282,6 +299,173 @@ namespace svm_kernel {
                            working_set.host_data(), working_set.size(), Cp, Cn, k_mat_rows,
                            k_mat_diag.host_data(), row_len, eps, diff.host_data(), max_iter,
                            cacheIndex, kernel_record, working_set_cal_rank_data);
+    }
+
+    void c_smo_solve_kernel(const int *label, float_type *f_val, float_type *alpha, float_type *alpha_diff,
+                            const int *working_set,
+                            int ws_size,
+                            float Cp, float Cn, const float *k_mat_rows, const float *k_mat_diag, int row_len,
+                            float_type eps,
+                            float_type *diff, int max_iter, int *cacheIndex, float *kernel_record,
+                            int *working_set_cal_rank_data,
+                            int *working_set_map_origin,
+                            int *kernel_value_order) {
+        //allocate shared memory
+        float_type alpha_i_diff; //delta alpha_i
+        float_type alpha_j_diff;
+        vector<float_type> kd(ws_size); // diagonal elements for kernel matrix
+
+        //index, f value and alpha for each instance
+        vector<float_type> a_old(ws_size);
+        vector<float_type> kIwsI(ws_size);
+        vector<float_type> f(ws_size);
+        vector<float_type> y(ws_size);
+        vector<float_type> a(ws_size);
+        for (int tid = 0; tid < ws_size; ++tid) {
+            int wsi = working_set[tid];
+            f[tid] = f_val[wsi];
+            a_old[tid] = a[tid] = alpha[wsi];
+            y[tid] = label[wsi];
+            kd[tid] = k_mat_diag[wsi];
+        }
+        float_type local_eps;
+        int numOfIter = 0;
+        while (1) {
+            //select fUp and fLow
+            int i = 0;
+            float_type up_value = INFINITY;
+            for (int tid = 0; tid < ws_size; ++tid) {
+                if (is_I_up(a[tid], y[tid], Cp, Cn))
+                    if (f[tid] < up_value) {
+                        up_value = f[tid];
+                        i = tid;
+                    }
+            }
+//            int wsI = working_set[i];
+            int wsI = working_set_map_origin[i];
+            int wscri = working_set_cal_rank_data[i];
+            if(wscri == -1){
+                int cIwsI = cacheIndex[wsI];
+                for (int tid = 0; tid < ws_size; ++tid) {
+//                    std::cout<<"in wscri -1"<<std::endl;
+//                    kIwsI[tid] = kernel_record[(long)row_len * cIwsI + working_set[tid]];
+                    kIwsI[tid] = kernel_record[(long)row_len * cIwsI + kernel_value_order[(long)row_len * cIwsI + working_set_map_origin[tid]]];
+//                    if(kernel_value_order[(long)row_len * cIwsI + working_set_map_origin[tid]] != working_set[tid])
+//                        std::cout<<"wrong!"<<std::endl;
+                }
+            }
+            else{
+                for (int tid = 0; tid < ws_size; ++tid) {
+                    kIwsI[tid] = k_mat_rows[(long)row_len * wscri + working_set[tid]];
+                }
+            }
+//            std::cout<<"kIwsI:";
+//            for(int tid = 0; tid < ws_size; tid++){
+//                std::cout<<kIwsI[tid]<<" ";
+//            }
+//            std::cout<<std::endl;
+            float_type low_value = -INFINITY;
+            for (int tid = 0; tid < ws_size; ++tid) {
+                if (is_I_low(a[tid], y[tid], Cp, Cn))
+                    if (f[tid] > low_value) {
+                        low_value = f[tid];
+                    }
+            }
+
+//            printf("up = %lf, low = %lf\n", up_value, low_value);
+            float_type local_diff = low_value - up_value;
+            if (numOfIter == 0) {
+                local_eps = max(eps, 0.1f * local_diff);
+                diff[0] = local_diff;
+            }
+
+            if (numOfIter > max_iter || local_diff < local_eps) {
+                for (int tid = 0; tid < ws_size; ++tid) {
+                    int wsi = working_set[tid];
+                    alpha_diff[tid] = -(a[tid] - a_old[tid]) * y[tid];
+                    alpha[wsi] = a[tid];
+                }
+                diff[1] = numOfIter;
+                break;
+            }
+            int j2 = 0;
+            float_type min_t = INFINITY;
+            //select j2 using second order heuristic
+            for (int tid = 0; tid < ws_size; ++tid) {
+                if (-up_value > -f[tid] && (is_I_low(a[tid], y[tid], Cp, Cn))) {
+                    float_type aIJ = kd[i] + kd[tid] - 2 * kIwsI[tid];
+                    float_type bIJ = -up_value + f[tid];
+                    float_type ft = -bIJ * bIJ / aIJ;
+                    if (ft < min_t) {
+                        min_t = ft;
+                        j2 = tid;
+                    }
+                }
+            }
+
+            //update alpha
+//            if (tid == i)
+            alpha_i_diff = y[i] > 0 ? Cp - a[i] : a[i];
+//            if (tid == j2)
+            alpha_j_diff = min(y[j2] > 0 ? a[j2] : Cn - a[j2],
+                               (-up_value + f[j2]) / (kd[i] + kd[j2] - 2 * kIwsI[j2]));
+            float_type l = min(alpha_i_diff, alpha_j_diff);
+
+//            if (tid == i)
+            a[i] += l * y[i];
+//            if (tid == j2)
+            a[j2] -= l * y[j2];
+
+//            int wsj2 = working_set[j2];
+            int wsj2 = working_set_map_origin[j2];
+            int wscrj2 = working_set_cal_rank_data[j2];
+//            std::cout<<"l:"<<l<<std::endl;
+//            std::cout<<"in smo_kernel f before update:";
+//            for(int tid = 0; tid < ws_size; tid++){
+//                std::cout<<f[tid]<<" ";
+//            }
+//            std::cout<<std::endl;
+            if(wscrj2 == -1){
+//                std::cout<<"in wscrj2 -1"<<std::endl;
+                int cIwsj2 = cacheIndex[wsj2];
+//                std::cout<<"cIwsj2:"<<cIwsj2<<std::endl;
+                for (int tid = 0; tid < ws_size; ++tid) {
+//                    float kJ2wsI = kernel_record[(long)row_len * cIwsj2 + working_set[tid]];
+                    float kJ2wsI = kernel_record[(long)row_len * cIwsj2 + kernel_value_order[(long)row_len * cIwsj2 + working_set_map_origin[tid]]];
+                    f[tid] -= l * (kJ2wsI - kIwsI[tid]);
+                }
+            }
+            else{
+                for (int tid = 0; tid < ws_size; ++tid) {
+                    float kJ2wsI = k_mat_rows[(long)row_len * wscrj2 + working_set[tid]];
+                    f[tid] -= l * (kJ2wsI - kIwsI[tid]);
+                }
+            }
+//            std::cout<<"in smo_kernel f:";
+//            for(int tid = 0; tid < ws_size; tid++){
+//                std::cout<<f[tid]<<" ";
+//            }
+//            std::cout<<std::endl;
+            numOfIter++;
+        }
+    }
+
+    void c_smo_solve(const SyncArray<int> &y, SyncArray<float_type> &f_val, SyncArray<float_type> &alpha,
+                     SyncArray<float_type> &alpha_diff,
+                     const SyncArray<int> &working_set, float_type Cp, float_type Cn,
+                     float_type* k_mat_rows,
+                     const SyncArray<float_type> &k_mat_diag, int row_len, float_type eps, SyncArray<float_type> &diff,
+                     int max_iter,
+                     int *cacheIndex,
+                     float *kernel_record,
+                     int *working_set_cal_rank_data,
+                     int *working_set_map_origin,
+                     int *kernel_value_order) {
+        c_smo_solve_kernel(y.host_data(), f_val.host_data(), alpha.host_data(), alpha_diff.host_data(),
+                           working_set.host_data(), working_set.size(), Cp, Cn, k_mat_rows,
+                           k_mat_diag.host_data(), row_len, eps, diff.host_data(), max_iter,
+                           cacheIndex, kernel_record, working_set_cal_rank_data, working_set_map_origin,
+                           kernel_value_order);
     }
 
     void nu_smo_solve_kernel(const int *y, float_type *f_val, float_type *alpha, float_type *alpha_diff,
@@ -547,6 +731,67 @@ namespace svm_kernel {
             f_data[idx] -= sum_diff;
         }
     }
+
+    void
+    update_f(SyncArray<float_type> &f, const SyncArray<float_type> &alpha_diff, float_type* k_mat_rows_data,
+             int n_instances, float *kernel_record, int *working_set_cal_rank_data, int *cacheIndex,
+             int *working_set, int *kernel_value_order, int *insMap) {
+        //"n_instances" equals to the number of rows of the whole kernel matrix for both SVC and SVR.
+        float_type *f_data = f.host_data();
+        const float_type *alpha_diff_data = alpha_diff.host_data();
+        //const float_type *k_mat_rows_data = k_mat_rows.host_data();
+#pragma omp parallel for schedule(guided)
+        for (int idx = 0; idx < n_instances; ++idx) {
+            float_type sum_diff = 0;
+#ifdef SIMD_SMO
+#pragma omp simd reduction(+:sum_diff)
+#endif
+            for (int i = 0; i < alpha_diff.size(); ++i) {
+                float_type d = alpha_diff_data[i];
+                if (d != 0) {
+                    if(working_set_cal_rank_data[i] == -1){
+//                        sum_diff += d * kernel_record[(long)n_instances * cacheIndex[working_set[i]] + idx];
+                        int cIwsI = cacheIndex[working_set[i]];
+                        sum_diff += d * kernel_record[(long)n_instances * cIwsI + kernel_value_order[(long)n_instances * cIwsI + insMap[idx]]];
+                    }
+                    else{
+                        sum_diff += d * k_mat_rows_data[(long)n_instances * working_set_cal_rank_data[i] + idx];
+                    }
+                }
+            }
+            f_data[idx] -= sum_diff;
+        }
+    }
+
+
+//    void
+//    update_f(SyncArray<float_type> &f, const SyncArray<float_type> &alpha_diff, float_type* k_mat_rows_data,
+//             int n_instances, float *kernel_record, int *working_set_cal_rank_data, int *cacheIndex,
+//             int *working_set) {
+//        //"n_instances" equals to the number of rows of the whole kernel matrix for both SVC and SVR.
+//        float_type *f_data = f.host_data();
+//        const float_type *alpha_diff_data = alpha_diff.host_data();
+//        //const float_type *k_mat_rows_data = k_mat_rows.host_data();
+//#pragma omp parallel for schedule(guided)
+//        for (int idx = 0; idx < n_instances; ++idx) {
+//            float_type sum_diff = 0;
+//#ifdef SIMD_SMO
+//#pragma omp simd reduction(+:sum_diff)
+//#endif
+//            for (int i = 0; i < alpha_diff.size(); ++i) {
+//                float_type d = alpha_diff_data[i];
+//                if (d != 0) {
+//                    if(working_set_cal_rank_data[i] == -1){
+//                        sum_diff += d * kernel_record[(long)n_instances * cacheIndex[working_set[i]] + idx];
+//                    }
+//                    else{
+//                        sum_diff += d * k_mat_rows_data[(long)n_instances * working_set_cal_rank_data[i] + idx];
+//                    }
+//                }
+//            }
+//            f_data[idx] -= sum_diff;
+//        }
+//    }
 
     void sort_f(SyncArray<float_type> &f_val2sort, SyncArray<int> &f_idx2sort) {
         vector<std::pair<float_type, int>> paris;

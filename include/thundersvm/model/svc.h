@@ -36,6 +36,8 @@ protected:
      */
     virtual void train_binary(const DataSet &dataset, int i, int j, SyncArray<float_type> &alpha, float_type &rho);
 
+    virtual void train_binary_multi_label(DataSet &dataset, int i, int j, SyncArray<float_type> &alpha, float_type &rho);
+
     void model_setup(const DataSet &dataset, SvmParam &param) override;
 
 private:

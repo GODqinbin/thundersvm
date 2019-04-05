@@ -71,6 +71,13 @@ public:
     ///instances of class \f$y_i\f$ and \f$y_j\f$
     const node2d instances(int y_i, int y_j) const;
 
+
+    ///instances of class \f$y_i\f$
+    const node2d instances_multi_label(int y_i);
+
+    ///instances of class \f$y_i\f$ and \f$y_j\f$
+    const node2d instances_multi_label(int y_i, int y_j);
+
     ///mapping instance index (after grouped) to the original index (in file)
     const vector<int> original_index() const;
 
@@ -78,7 +85,12 @@ public:
 
     const vector<int> original_index(int y_i, int y_j) const;
 
-private:
+
+    vector<int> insMap; //the instance id of original dataset in the new group class dataset
+    vector<int> perm_;
+    vector<int> origin_new_order;
+    int order_rank=0;
+public:
     vector<float_type> y_;
     vector<vector<int>> multi_y_;
     int max_multi_label_;
@@ -88,6 +100,8 @@ private:
     vector<int> start_; //logical start position of each class
     vector<int> count_; //the number of instances of each class
     vector<int> label_;
-    vector<int> perm_;
+
+
+
 };
 #endif //THUNDERSVM_DATASET_H

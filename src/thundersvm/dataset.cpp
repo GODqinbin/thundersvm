@@ -327,6 +327,47 @@ const DataSet::node2d DataSet::instances(int y_i, int y_j) const {//return insta
     return two_class_ins;
 }
 
+const DataSet::node2d DataSet::instances_multi_label(int y_i) {//return instances of a given class
+    int si = start_[y_i];
+    int ci = count_[y_i];
+    node2d one_class_ins;
+    for (int i = si; i < si + ci; ++i) {
+        origin_new_order[perm_[i]] = order_rank++;
+        one_class_ins.push_back(instances_[perm_[i]]);
+        insMap.push_back(perm_[i]);
+    }
+    return one_class_ins;
+}
+
+const DataSet::node2d DataSet::instances_multi_label(int y_i, int y_j) {//return instances of two classes
+    this->insMap.clear();
+    this->origin_new_order.clear();
+    this->origin_new_order.resize(total_count_);
+    order_rank = 0;
+    node2d two_class_ins;
+    node2d i_ins = instances_multi_label(y_i);
+    node2d j_ins = instances_multi_label(y_j);
+    two_class_ins.insert(two_class_ins.end(), i_ins.begin(), i_ins.end());
+    two_class_ins.insert(two_class_ins.end(), j_ins.begin(), j_ins.end());
+//    std::cout<<"perm 100:"<<perm_[100]<<std::endl;
+//    std::cout<<"instance[perm[100]]:"<<std::endl;
+//    for(int i = 0; i < instances_[perm_[100]].size(); i++){
+//        std::cout<<"index:"<<instances_[perm_[100]][i].index<<" ";
+//        std::cout<<"value:"<<instances_[perm_[100]][i].value<<" ";
+//    }
+//    std::cout<<std::endl;
+//
+//    std::cout<<"insmap 100:"<<insMap[100]<<std::endl;
+//    std::cout<<"instance[insMap[100]]:"<<std::endl;
+//    for(int i = 0; i < instances_[insMap[100]].size(); i++){
+//        std::cout<<"index:"<<instances_[insMap[100]][i].index<<" ";
+//        std::cout<<"value:"<<instances_[insMap[100]][i].value<<" ";
+//    }
+//    std::cout<<std::endl;
+    return two_class_ins;
+}
+
+
 const vector<int> DataSet::original_index() const {//index of each instance in the original array
     return perm_;
 }

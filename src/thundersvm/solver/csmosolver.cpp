@@ -22,12 +22,19 @@ int n_switch = 0;
 void
 CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<float_type> &alpha, float_type &rho,
                   SyncArray<float_type> &f_val, float_type eps, float_type Cp, float_type Cn, int ws_size,
-                  float_type* kernel_value_cache, bool* in_cache, int* cacheIndex, int* insId) const {
+                  float_type* kernel_value_cache, bool* in_cache, int* cacheIndex, int* insId,
+                  bool& global_first, bool& cache_full, int& free_cache_index, int* intMap,
+                  int* kernel_value_order, int* origin_map_order) const {
     TIMED_SCOPE(timerObj, "solve");
-
+    std::cout<<"in multi label solver"<<std::endl;
+    std::cout<<"cache_full:"<<cache_full<<std::endl;
     int out_max_iter = 50000;
     int numT = 20;
 
+    std::cout<<"intmap 99:"<<intMap[99]<<std::endl;
+    std::cout<<"origin_map_order[intmap[99]]:"<<origin_map_order[intMap[99]]<<std::endl;
+    std::cout<<"intmap 30800:"<<intMap[30800]<<std::endl;
+    std::cout<<"origin_map_order[intmap[30800]]:"<<origin_map_order[intMap[30800]]<<std::endl;
     int divide = 50;
     int is_front = -1;
     //avoid infinite loop of repeated local diff
@@ -47,6 +54,7 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
     int lfu_hit_num_last_time = 0;
 //    vector<vector<int>> reuse_dis(n_instances);
 //    int reuse_dis[n_instances];
+    //record the latest number of iteration that the instance is used
     int *reuse_dis = new int[n_instances];
     memset(reuse_dis, -1, n_instances * sizeof(int));
     int seg_size[100]; // 1-5, 6-10...
@@ -70,7 +78,7 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
     int seg_iter_size = 2 * cache_line_num / 500;
 //    int n_seg_per_iter = 2 * seg_iter_size / 5;
 
-    long hbw_size = (long)16 * 1024 * 1024 * 1024;
+//    long hbw_size = (long)16 * 1024 * 1024 * 1024;
     //std::cout<<"size:"<<hbw_size<<std::endl;
     long ws_kernel_size = (long)ws_size * n_instances;
     std::cout<<"ws_kernel_size:"<<ws_kernel_size<<std::endl;
@@ -80,6 +88,8 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
 
 
     SyncArray<int> working_set(ws_size);
+    //the instance id of origin dataset
+    vector<int> working_set_map(ws_size);
     SyncArray<int> working_set_first_half(q);
     SyncArray<int> working_set_last_half(q);
 #ifdef USE_CUDA
@@ -93,6 +103,7 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
     SyncArray<int> f_idx2sort(n_instances);
     SyncArray<float_type> f_val2sort(n_instances);
     SyncArray<float_type> alpha_diff(ws_size);
+    float_type *alpha_diff_host = alpha_diff.host_data();
     SyncArray<float_type> diff(2);
     float_type *diff_data = diff.host_data();
 
@@ -107,11 +118,11 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
 //    int *cacheIndex = new int[n_instances];//index of kernel row value in kernel_record
 //    bool *in_choose = new bool[n_instances];
     used_num = (int *) malloc(n_instances * sizeof(int));
-
+    memset(used_num, 0, sizeof(int) * n_instances);
 
     in_choose = (bool *) malloc(n_instances * sizeof(bool));
-    int free_cache_index = 0;
-    bool cache_full = false;
+//    int free_cache_index = 0;
+//    bool cache_full = false;
     memset(in_choose, 0, sizeof(bool) * n_instances);
 
     //int hit_num = 0;
@@ -123,7 +134,7 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
     memset(time_used, -1, sizeof(int) * cache_line_num);
 
 
-    memset(used_num, 0, sizeof(int) * n_instances);
+
 
 
 
@@ -134,6 +145,7 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
     init_f(alpha, y, k_mat, f_val);
     int iter = 0;
     int thre = 0;
+
     LOG(INFO) << "training start";
     {
         TIMED_SCOPE(timerObj, "train record time");
@@ -141,7 +153,10 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
         //vector<vector <int>> ins_rec(n_instances);
         vector<int> working_set_cal_last_half;
         SyncArray<int> working_set_cal_rank(ws_size);
-        int *working_set_data = working_set.host_data();
+//        int *working_set_data = working_set.host_data();
+        int* working_host = working_set.host_data();
+//        auto working_set_data = thrust::make_permutation_iterator(working_host, intMap);
+//        int* working_set_data =
         int *working_set_cal_rank_data = working_set_cal_rank.host_data();
         //float *k_mat_rows_data = k_mat_rows.host_data();
         vector <int> recal_first_half_kernel;
@@ -159,12 +174,25 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
                 sort_f(f_val2sort, f_idx2sort);
             }
             vector<int> ws_indicator(n_instances, 0);
-            if (1 == iter) {
+            if (1 == iter && global_first) {
+                global_first = false;
                 {
                     TIMED_SCOPE(timerObj, "select working set");
                     select_working_set(ws_indicator, f_idx2sort, y, alpha, Cp, Cn, working_set);
                 }
-                {
+				LOG(INFO)<<"after select working set";
+                for(int i = 0; i < working_set.size(); i++){
+                    working_set_map[i] = intMap[working_host[i]];
+                }
+                int *working_set_data = working_set_map.data();
+                std::cout<<"after working set map"<<std::endl;
+				for(int j = 0; j < ws_size; j++){
+                    if(origin_map_order[working_set_data[j]] != working_host[j])
+                        std::cout<<"first origin wrong:"<<j<<"working_set:"<<working_host[j]<<std::endl;
+                }
+//                SyncArray<int> working_set_origin_map(working_set.size());
+                LOG(INFO)<<"before get rows";
+				{
                     TIMED_SCOPE(timerObj, "get rows");
                     k_mat.get_rows(working_set, k_mat_rows, ws_kernel_size);
                 }
@@ -173,6 +201,7 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
                     smo_kernel(y, f_val, alpha, alpha_diff, working_set, Cp, Cn, k_mat_rows, k_mat.diag(), n_instances, eps,
                                diff, max_iter);
                 }
+//                LOG(INFO)<<"alpha diff:"<<alpha_diff;
                 {
                     TIMED_SCOPE(timerObj, "update f");
                     //update f
@@ -205,6 +234,9 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
                             memcpy(kernel_value_cache + (long)(free_cache_index + i) * cache_row_size,
                                    k_mat_rows + (long)i * n_instances,
                                    n_instances * sizeof(float_type));
+                            memcpy(kernel_value_order + (long)(free_cache_index + i) * cache_row_size,
+                                    origin_map_order,
+                                    n_instances * sizeof(int));
                             int wsi = working_set_data[i];
                             in_cache[wsi] = true;
                             cacheIndex[wsi] = free_cache_index + i;
@@ -222,6 +254,13 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
                             memcpy(kernel_value_cache + (long)(free_cache_index + i) * cache_row_size,
                                    k_mat_rows + (long)i * n_instances,
                                    n_instances * sizeof(float_type));
+                            memcpy(kernel_value_order + (long)(free_cache_index + i) * cache_row_size,
+                                   origin_map_order,
+                                   n_instances * sizeof(int));
+                            for(int j = 0; j < ws_size; j++){
+                                if(origin_map_order[working_set_data[j]] != working_host[j])
+                                    std::cout<<"origin wrong"<<std::endl;
+                            }
                             int wsi = working_set_data[i];
                             in_cache[wsi] = true;
                             cacheIndex[wsi] = free_cache_index + i;
@@ -242,6 +281,9 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
                                     memcpy(kernel_value_cache + (long)cacheIndex[j] * cache_row_size,
                                            k_mat_rows + (long) i * n_instances,
                                            n_instances * sizeof(float));
+                                    memcpy(kernel_value_order + (long)cacheIndex[j] * cache_row_size,
+                                           origin_map_order,
+                                           n_instances * sizeof(int));
                                     in_cache[wsi] = true;
                                     cacheIndex[wsi] = cacheIndex[j];
 
@@ -260,20 +302,359 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
                 for(int i = 0; i < ws_size; i++)
                     working_set_cal_rank_data[i] = i;
 
-            } else {
+            }
+            else if(iter == 1 && !global_first){
+                //the instance id that need to compute kernel values
+                std::cout<<"in iter 1 and !global_first"<<std::endl;
+                std::cout<<"cache full:"<<cache_full<<std::endl;
+                std::cout<<"free cache index:"<<free_cache_index<<std::endl;
+                vector<int> working_set_cal;
+                vector<int> working_set_cal_mat_id;
+                {
+                    TIMED_SCOPE(timerObj, "select working set");
+                    select_working_set(ws_indicator, f_idx2sort, y, alpha, Cp, Cn, working_set);
+                }
+//                LOG(INFO)<<"working_set:"<<working_set;
+//                std::cout<<"working set full:";
+//                for(int i = 0; i < working_set.size(); i++){
+//                    std::cout<<working_host[i]<<" ";
+//                }
+//                std::cout<<std::endl;
+//                std::cout<<"working host1000:"<<working_host[1000]<<std::endl;
+                for(int i = 0; i < working_set.size(); i++){
+                    working_set_map[i] = intMap[working_host[i]];
+                }
+                int *working_set_data = working_set_map.data();
+
+                for(int j = 0; j < ws_size; j++){
+                    if(origin_map_order[working_set_data[j]] != working_host[j])
+                        std::cout<<"origin wrong"<<std::endl;
+                }
+
+
+                int first_half_cal_num;
+                {
+                    TIMED_SCOPE(timerObj, "ws&kv setup");
+                    int rank = 0;
+                    for(int i = 0; i < q; i++){
+                        in_choose[working_set_data[i]] = 1;
+                        if(in_cache[working_set_data[i]]){
+                            hit_num++;
+                            lfu_hit_num++;
+                            lru_hit_num++;
+                            working_set_cal_rank_data[i] = -1;
+                            time_used[cacheIndex[working_set_data[i]]] = iter;
+                        }
+                        else{
+                            miss_num++;
+                            working_set_cal_rank_data[i] = rank++;
+                            working_set_cal.push_back(working_set_data[i]);
+                            working_set_cal_mat_id.push_back(working_host[i]);
+                        }
+                        //if use local reuse_dis, the condition is always false
+                        if(reuse_dis[working_set_data[i]] != -1){
+                            seg_size[(iter - reuse_dis[working_set_data[i]] - 1) / 5]++;
+                        }
+                        reuse_dis[working_set_data[i]] = iter;
+                    }
+                    first_half_cal_num = rank;
+
+//                    for(int i = 0; i < ws_size; i++){
+//                        in_choose[working_set_data[i]] = 1;
+//                        if(in_cache[working_set_data[i]]){
+//                            hit_num++;
+//                            lfu_hit_num++;
+//                            lru_hit_num++;
+//                            working_set_cal_rank_data[i] = -1;
+//                            time_used[cacheIndex[working_set_data[i]]] = iter;
+//                        }
+//                        else{
+//                            miss_num++;
+//                            working_set_cal_rank_data[i] = rank++;
+//                            working_set_cal.push_back(working_set_data[i]);
+//                            working_set_cal_mat_id.push_back(working_host[i]);
+//                        }
+//                        //if use local reuse_dis, the condition is always false
+//                        if(reuse_dis[working_set_data[i]] != -1){
+//                            seg_size[(iter - reuse_dis[working_set_data[i]] - 1) / 5]++;
+//                        }
+//                        reuse_dis[working_set_data[i]] = iter;
+//                    }
+                }
+                if(working_set_cal_mat_id.size()){
+                    TIMED_SCOPE(timerObj, "get rows");
+
+                    k_mat.get_rows(working_set_cal_mat_id, k_mat_rows_first_half, ws_kernel_size / 2);
+                }
+                {
+                    working_set_cal_mat_id.clear();
+                    int rank = q;
+                    for(int i = q; i < ws_size; i++){
+                        in_choose[working_set_data[i]] = 1;
+                        if(in_cache[working_set_data[i]]){
+                            hit_num++;
+                            lfu_hit_num++;
+                            lru_hit_num++;
+                            working_set_cal_rank_data[i] = -1;
+                            time_used[cacheIndex[working_set_data[i]]] = iter;
+                        }
+                        else{
+                            miss_num++;
+                            working_set_cal_rank_data[i] = rank++;
+                            working_set_cal.push_back(working_set_data[i]);
+                            if(working_set_data[i] == 545)
+                                std::cout<<"545 the working set id:"<<i<<std::endl;
+                            working_set_cal_mat_id.push_back(working_host[i]);
+                        }
+                        //if use local reuse_dis, the condition is always false
+                        if(reuse_dis[working_set_data[i]] != -1){
+                            seg_size[(iter - reuse_dis[working_set_data[i]] - 1) / 5]++;
+                        }
+                        reuse_dis[working_set_data[i]] = iter;
+                    }
+
+                }
+                if(working_set_cal_mat_id.size()){
+                    TIMED_SCOPE(timerObj, "get rows");
+                    k_mat.get_rows(working_set_cal_mat_id, k_mat_rows_last_half, ws_kernel_size / 2);
+                }
+                {
+                    TIMED_SCOPE(timerObj, "smo kernel");
+//                    smo_kernel(y, f_val, alpha, alpha_diff, working_set, Cp, Cn, k_mat_rows, k_mat.diag(), n_instances, eps, diff,
+//                               max_iter, cacheIndex, kernel_value_cache, working_set_cal_rank_data);
+                    smo_kernel(y, f_val, alpha, alpha_diff, working_set, Cp, Cn, k_mat_rows, k_mat.diag(), n_instances, eps, diff,
+                               max_iter, cacheIndex, kernel_value_cache, working_set_cal_rank_data, working_set_data, kernel_value_order);
+                }
+//                LOG(INFO)<<"f_val:"<<f_val;
+//                LOG(INFO)<<"alpha diff:"<<alpha_diff;
+//                std::cout<<"alpha diff:";
+//                for(int i = 0; i < alpha_diff.size(); i++){
+//                    std::cout<<alpha_diff_host[i]<<" ";
+//                }
+//                std::cout<<std::endl;
+                {
+                    TIMED_SCOPE(timerObj, "update f");
+                    update_f(f_val, alpha_diff, k_mat_rows, k_mat.n_instances(), kernel_value_cache, working_set_cal_rank_data,
+                             cacheIndex, working_set_data,kernel_value_order,intMap);
+                }
+//                LOG(INFO)<<"after update_f f_val:"<<f_val;
+                local_iter += diff_data[1];
+                {
+                    TIMED_SCOPE(timerObj, "update cache");
+                    for(int i = 0; i < ws_size; i++)
+                        used_num[working_set_data[i]]++;
+                    int ws_up_size = working_set_cal.size();
+                    if(!cache_full){
+                        int free_num = cache_line_num - free_cache_index;
+                        if(free_num > ws_up_size){
+#pragma omp parallel for
+                            for(int i = 0; i < ws_up_size; i++){
+                                int k_mat_rows_positon = i;
+                                if(i>=first_half_cal_num){
+                                    k_mat_rows_positon = q + i - first_half_cal_num;
+                                }
+                                memcpy(kernel_value_cache + (long)(free_cache_index + i) * cache_row_size,
+                                        k_mat_rows + (long)k_mat_rows_positon * n_instances,
+                                        n_instances * sizeof(float_type));
+                                memcpy(kernel_value_order + (long)(free_cache_index + i) * cache_row_size,
+                                       origin_map_order,
+                                       n_instances * sizeof(int));
+//                                if((free_cache_index + i) == 2418) {
+//                                    std::cout << "here2418" << std::endl;
+//                                    std::cout<<"working_set_cal:"<<working_set_cal[i]<<std::endl;
+//                                    std::cout<<"k_mat_rows 1000 first 1000 and last 1000:";
+//                                    for(int j = 0; j < 1000; j++){
+//                                        std::cout<<k_mat_rows[i*n_instances + j]<<" ";
+//                                    }
+//                                    for(int j = n_instances - 1000; j < n_instances; j++){
+//                                        std::cout<<k_mat_rows[i*n_instances + j]<<" ";
+//                                    }
+//                                    std::cout<<std::endl;
+//                                }
+                                int wsi = working_set_cal[i];
+                                in_cache[wsi] = true;
+                                cacheIndex[wsi] = free_cache_index + i;
+
+                                insId[free_cache_index + i] = wsi;
+                                time_used[free_cache_index + i] = iter;
+                            }
+                            free_cache_index += ws_up_size;
+                        }
+                        else{
+#pragma omp parallel for
+                            for(int i = 0; i < free_num; i++){
+                                int k_mat_rows_positon = i;
+                                if(i>=first_half_cal_num){
+                                    k_mat_rows_positon = q + i - first_half_cal_num;
+                                }
+                                memcpy(kernel_value_cache + (long)(free_cache_index + i) * cache_row_size,
+                                       k_mat_rows + (long)k_mat_rows_positon * n_instances,
+                                       n_instances * sizeof(float_type));
+                                memcpy(kernel_value_order + (long)(free_cache_index + i) * cache_row_size,
+                                       origin_map_order,
+                                       n_instances * sizeof(int));
+                                int wsi = working_set_cal[i];
+                                in_cache[wsi] = true;
+                                cacheIndex[wsi] = free_cache_index + i;
+
+                                insId[free_cache_index + i] = wsi;
+                                time_used[free_cache_index + i] = iter;
+                            }
+                            free_cache_index += free_num;
+                            cache_full = true;
+
+                            if(!use_lru){
+                                for(int i = free_num; i < ws_up_size; i++){
+                                    int wsi = working_set_cal[i];
+                                    int k_mat_rows_positon = i;
+                                    if(i>=first_half_cal_num){
+                                        k_mat_rows_positon = q + i - first_half_cal_num;
+                                    }
+                                    for(int j = 0; j < n_instances; j++){
+                                        if (in_cache[j] && (used_num[j] < (used_num[wsi] - thre)) && (in_choose[j] == 0)) {
+                                            in_cache[j] = false;
+                                            memcpy(kernel_value_cache + (long)cacheIndex[j] * cache_row_size,
+                                                   k_mat_rows + (long) k_mat_rows_positon * n_instances,
+                                                   n_instances * sizeof(float_type));
+                                            memcpy(kernel_value_order + (long)cacheIndex[j] * cache_row_size,
+                                                   origin_map_order,
+                                                   n_instances * sizeof(int));
+                                            in_cache[wsi] = true;
+                                            cacheIndex[wsi] = cacheIndex[j];
+
+                                            insId[cacheIndex[j]] = wsi;
+                                            time_used[cacheIndex[j]] = iter;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            else{
+                                for(int i = free_num; i < ws_up_size; i++){
+                                    int k_mat_rows_positon = i;
+                                    if(i>=first_half_cal_num){
+                                        k_mat_rows_positon = q + i - first_half_cal_num;
+                                    }
+                                    int wsi = working_set_cal[i];
+                                    int min_idx = -1;
+                                    int min = time_used[0] + 1;
+                                    for(int j = 0; j < cache_line_num; j++){
+                                        if((time_used[j] < min) && (in_choose[insId[j]] == 0)){
+                                            min = time_used[j];
+                                            min_idx = j;
+                                        }
+                                    }
+                                    if(min_idx != -1){
+                                        in_cache[insId[min_idx]] = false;
+                                        memcpy(kernel_value_cache + (long)min_idx * cache_row_size,
+                                               k_mat_rows + (long)k_mat_rows_positon * n_instances, n_instances * sizeof(float_type));
+                                        memcpy(kernel_value_order + (long)min_idx * cache_row_size,
+                                               origin_map_order,
+                                               n_instances * sizeof(int));
+                                        in_cache[wsi] = true;
+                                        cacheIndex[wsi] = min_idx;
+
+                                        insId[min_idx] = wsi;
+                                        time_used[min_idx] = iter;
+                                    }
+                                }
+                            }
+
+                        }
+                    }
+                    //cache is full
+                    else{
+                        if(!use_lru){
+                            for(int i = 0; i < ws_up_size; i++){
+                                int k_mat_rows_positon = i;
+                                if(i>=first_half_cal_num){
+                                    k_mat_rows_positon = q + i - first_half_cal_num;
+                                }
+                                int wsi = working_set_cal[i];
+                                for(int j = 0; j < n_instances; j++){
+                                    if (in_cache[j] && (used_num[j] < (used_num[wsi] - thre)) && (in_choose[j] == 0)) {
+                                        in_cache[j] = false;
+                                        memcpy(kernel_value_cache + (long)cacheIndex[j] * cache_row_size,
+                                               k_mat_rows + (long) k_mat_rows_positon * n_instances,
+                                               n_instances * sizeof(float_type));
+                                        memcpy(kernel_value_order + (long)cacheIndex[j] * cache_row_size,
+                                               origin_map_order,
+                                               n_instances * sizeof(int));
+                                        in_cache[wsi] = true;
+                                        cacheIndex[wsi] = cacheIndex[j];
+
+                                        insId[cacheIndex[j]] = wsi;
+                                        time_used[cacheIndex[j]] = iter;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        else{
+                            for(int i = 0; i < ws_up_size; i++){
+                                int k_mat_rows_positon = i;
+                                if(i>=first_half_cal_num){
+                                    k_mat_rows_positon = q + i - first_half_cal_num;
+                                }
+                                int wsi = working_set_cal[i];
+                                int min_idx = -1;
+                                int min = time_used[0] + 1;
+                                for(int j = 0; j < cache_line_num; j++){
+                                    if((time_used[j] < min) && (in_choose[insId[j]] == 0)){
+                                        min = time_used[j];
+                                        min_idx = j;
+                                    }
+                                }
+                                if(min_idx != -1){
+                                    in_cache[insId[min_idx]] = false;
+                                    memcpy(kernel_value_cache + (long)min_idx * cache_row_size,
+                                           k_mat_rows + (long)k_mat_rows_positon * n_instances, n_instances * sizeof(float_type));
+                                    memcpy(kernel_value_order + (long)min_idx * cache_row_size,
+                                           origin_map_order,
+                                           n_instances * sizeof(int));
+                                    in_cache[wsi] = true;
+                                    cacheIndex[wsi] = min_idx;
+
+                                    insId[min_idx] = wsi;
+                                    time_used[min_idx] = iter;
+                                }
+                            }
+                        }
+                    }
+                }
+//                for(int i = 0; i < ws_size; i++)
+//                    working_set_cal_rank_data[i] = i;
+            }
+
+
+            else {
+                std::cout<<"cache full:"<<cache_full<<std::endl;
+                std::cout<<"free cache index:"<<free_cache_index<<std::endl;
                 memset(in_choose, 0, sizeof(bool) * n_instances);
                 working_set_first_half.copy_from(working_set_last_half);
 #ifdef USE_SIMD
 #pragma omp simd
 #endif
                 for (int i = 0; i < q; ++i) {
-                    ws_indicator[working_set_data[i]] = 1;
+//                    ws_indicator[working_set_data[i]] = 1;
+                    ws_indicator[working_host[i]] = 1;
                 }
 
                 {
                     TIMED_SCOPE(timerObj, "select working set");
                     select_working_set(ws_indicator, f_idx2sort, y, alpha, Cp, Cn, working_set_last_half);
                 }
+//                LOG(INFO)<<"working set last half:"<<working_set_last_half;
+                for(int i = 0; i < working_set.size(); i++){
+                    working_set_map[i] = intMap[working_host[i]];
+                }
+                int *working_set_data = working_set_map.data();
+
+                for(int j = 0; j < ws_size; j++){
+                    if(origin_map_order[working_set_data[j]] != working_host[j])
+                        std::cout<<"origin wrong"<<std::endl;
+                }
+                vector<int> working_set_cal_last_half_mat_origin;
                 {
                     TIMED_SCOPE(timerObj, "ws&kv setup");
                     int rank = 0;
@@ -303,7 +684,9 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
                     //memcpy(k_mat_rows_first_half, k_mat_rows_last_half, ws_kernel_size / 2 * sizeof(float_type));
 
                     working_set_cal_last_half.clear();
+
                     rank = ws_size / 2;
+
                     //int first_off = 0;
                     for(int i = q; i < ws_size; i++){
                         in_choose[working_set_data[i]] = 1;
@@ -321,7 +704,8 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
 //                        new_miss_num++;
                             miss_num++;
                             working_set_cal_rank_data[i] = rank++;
-                            working_set_cal_last_half.emplace_back(working_set_data[i]);
+                            working_set_cal_last_half.push_back(working_set_data[i]);
+                            working_set_cal_last_half_mat_origin.push_back(working_host[i]);
                             // working_set_cal_last_half.push_back(working_set_data[i]);
 //                    shown[working_set_data[i]] = 1;
                         }
@@ -334,23 +718,35 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
                 }
                 //        std::cout<<"iter"<<iter<<":"<<(float_type)numOfIn/ws_size<<std::endl;
                 //        std::cout<<"size:"<<working_set_cal_last_half.size()<<std::endl;
-                if(working_set_cal_last_half.size())
+                if(working_set_cal_last_half_mat_origin.size())
                 {
                     TIMED_SCOPE(timerObj, "get rows");
-                    k_mat.get_rows(working_set_cal_last_half, k_mat_rows_last_half, ws_kernel_size / 2);
+                    k_mat.get_rows(working_set_cal_last_half_mat_origin, k_mat_rows_last_half, ws_kernel_size / 2);
                 }
                 {
                     TIMED_SCOPE(timerObj, "smo kernel");
                     //local smo
+//                    smo_kernel(y, f_val, alpha, alpha_diff, working_set, Cp, Cn, k_mat_rows, k_mat.diag(), n_instances, eps, diff,
+//                               max_iter, cacheIndex, kernel_value_cache, working_set_cal_rank_data);
                     smo_kernel(y, f_val, alpha, alpha_diff, working_set, Cp, Cn, k_mat_rows, k_mat.diag(), n_instances, eps, diff,
-                               max_iter, cacheIndex, kernel_value_cache, working_set_cal_rank_data);
+                               max_iter, cacheIndex, kernel_value_cache, working_set_cal_rank_data, working_set_data,kernel_value_order);
                 }
+//                LOG(INFO)<<"f_val:"<<f_val;
+//                LOG(INFO)<<"alpha diff:"<<alpha_diff;
+//                std::cout<<"alpha diff:";
+//                for(int i = 0; i < alpha_diff.size(); i++){
+//                    std::cout<<alpha_diff_host[i]<<" ";
+//                }
+//                std::cout<<std::endl;
+//                LOG(INFO)<<"f_val:"<<f_val;
                 {
                     TIMED_SCOPE(timerObj, "update f");
                     //update f
                     update_f(f_val, alpha_diff, k_mat_rows, k_mat.n_instances(), kernel_value_cache, working_set_cal_rank_data,
-                             cacheIndex, working_set_data);
+                             cacheIndex, working_set_data,kernel_value_order,intMap);
                 }
+//                LOG(INFO)<<"after update_f f_val:"<<f_val;
+
                 local_iter += diff_data[1];
                 //LOG(INFO)<<"f:"<<f_val;
                 {
@@ -372,6 +768,9 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
                                 memcpy(kernel_value_cache + (long)(free_cache_index + i) * cache_row_size,
                                        k_mat_rows + (long)(q + i) * n_instances,
                                        n_instances * sizeof(float_type));
+                                memcpy(kernel_value_order + (long)(free_cache_index + i) * cache_row_size,
+                                       origin_map_order,
+                                       n_instances * sizeof(int));
                                 int wsi = working_set_cal_last_half[i];
                                 in_cache[wsi] = true;
                                 cacheIndex[wsi] = free_cache_index + i;
@@ -390,6 +789,9 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
                                 memcpy(kernel_value_cache + (long)(free_cache_index + i) * cache_row_size,
                                        k_mat_rows + (long)(q + i) * n_instances,
                                        n_instances * sizeof(float_type));
+                                memcpy(kernel_value_order + (long)(free_cache_index + i) * cache_row_size,
+                                       origin_map_order,
+                                       n_instances * sizeof(int));
                                 int wsi = working_set_cal_last_half[i];
                                 in_cache[wsi] = true;
                                 cacheIndex[wsi] = free_cache_index + i;
@@ -410,6 +812,9 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
                                             memcpy(kernel_value_cache + (long)cacheIndex[j] * cache_row_size,
                                                    k_mat_rows + (long) (q + i) * n_instances,
                                                    n_instances * sizeof(float));
+                                            memcpy(kernel_value_order + (long)cacheIndex[j] * cache_row_size,
+                                                   origin_map_order,
+                                                   n_instances * sizeof(int));
                                             in_cache[wsi] = true;
                                             cacheIndex[wsi] = cacheIndex[j];
 
@@ -439,6 +844,9 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
 //                                copy_num++;
                                         memcpy(kernel_value_cache + (long)min_idx * cache_row_size,
                                                k_mat_rows + (long)(q + i) * n_instances, n_instances * sizeof(float_type));
+                                        memcpy(kernel_value_order + (long)min_idx * cache_row_size,
+                                               origin_map_order,
+                                               n_instances * sizeof(int));
                                         in_cache[wsi] = true;
                                         cacheIndex[wsi] = min_idx;
 
@@ -514,6 +922,9 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
                                             memcpy(kernel_value_cache + (long)j * cache_row_size,
                                                    k_mat_rows + (long) (q + i) * n_instances,
                                                    n_instances * sizeof(float));
+                                            memcpy(kernel_value_order + (long)j * cache_row_size,
+                                                   origin_map_order,
+                                                   n_instances * sizeof(int));
                                             in_cache[wsi] = true;
                                             cacheIndex[wsi] = j;
 
@@ -554,6 +965,9 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
 //                                    copy_num++;
                                             memcpy(kernel_value_cache + (long)min_idx * cache_row_size,
                                                    k_mat_rows + (long) (q + i) * n_instances, n_instances * sizeof(float));
+                                            memcpy(kernel_value_order + (long)min_idx * cache_row_size,
+                                                   origin_map_order,
+                                                   n_instances * sizeof(int));
                                             in_cache[wsi] = true;
                                             cacheIndex[wsi] = min_idx;
 
@@ -599,6 +1013,7 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
                     LOG(INFO) << "training finished";
                     float_type obj = calculate_obj(f_val, alpha, y);
                     LOG(INFO) << "obj = " << obj;
+                    LOG(INFO)<<"alpha diff:"<<alpha_diff;
                     break;
                 }
 
@@ -700,6 +1115,7 @@ working_set_last_half.set_device_data(&working_set.device_data()[q]);
     SyncArray<int> f_idx2sort(n_instances);
     SyncArray<float_type> f_val2sort(n_instances);
     SyncArray<float_type> alpha_diff(ws_size);
+    float_type *alpha_diff_host = alpha_diff.host_data();
     SyncArray<float_type> diff(2);
     float_type *diff_data = diff.host_data();
 
@@ -769,21 +1185,38 @@ working_set_last_half.set_device_data(&working_set.device_data()[q]);
                     TIMED_SCOPE(timerObj, "select working set");
                     select_working_set(ws_indicator, f_idx2sort, y, alpha, Cp, Cn, working_set);
                 }
+//                LOG(INFO)<<"working_set:"<<working_set;
+//                std::cout<<"working set full:";
+//                for(int i = 0; i < working_set.size(); i++){
+//                    std::cout<<working_set_data[i]<<" ";
+//                }
+//                std::cout<<std::endl;
                 {
                     TIMED_SCOPE(timerObj, "get rows");
                     k_mat.get_rows(working_set, k_mat_rows, ws_kernel_size);
                 }
+//                std::cout<<"working host1000:"<<working_set_data[1000]<<std::endl;
+//                std::cout<<"k_mat_rows 1000 first 1000 and last 1000:";
+//                for(int j = 0; j < 1000; j++){
+//                    std::cout<<k_mat_rows[1000 * n_instances + j]<<" ";
+//                }
+//                for(int j = n_instances - 1000; j < n_instances; j++){
+//                    std::cout<<k_mat_rows[1000*n_instances + j]<<" ";
+//                }
+//                std::cout<<std::endl;
                 {
                     TIMED_SCOPE(timerObj, "smo kernel");
                     smo_kernel(y, f_val, alpha, alpha_diff, working_set, Cp, Cn, k_mat_rows, k_mat.diag(), n_instances, eps,
                                diff, max_iter);
                 }
+//                LOG(INFO)<<"f_val:"<<f_val;
+//                LOG(INFO)<<"alpha diff:"<<alpha_diff;
                 {
                     TIMED_SCOPE(timerObj, "update f");
                     //update f
                     update_f(f_val, alpha_diff, k_mat_rows, k_mat.n_instances());
                 }
-
+//                LOG(INFO)<<"after update_f f_val:"<<f_val;
                 local_iter += diff_data[1];
                 {
                     TIMED_SCOPE(timerObj, "update cache");
@@ -873,6 +1306,7 @@ working_set_last_half.set_device_data(&working_set.device_data()[q]);
                     TIMED_SCOPE(timerObj, "select working set");
                     select_working_set(ws_indicator, f_idx2sort, y, alpha, Cp, Cn, working_set_last_half);
                 }
+//                LOG(INFO)<<"working set last half:"<<working_set_last_half;
                 {
                     TIMED_SCOPE(timerObj, "ws&kv setup");
                     int rank = 0;
@@ -932,12 +1366,20 @@ working_set_last_half.set_device_data(&working_set.device_data()[q]);
                     smo_kernel(y, f_val, alpha, alpha_diff, working_set, Cp, Cn, k_mat_rows, k_mat.diag(), n_instances, eps, diff,
                                max_iter, cacheIndex, kernel_record, working_set_cal_rank_data);
                 }
+//                LOG(INFO)<<"f_val:"<<f_val;
+//                LOG(INFO)<<"alpha diff:"<<alpha_diff;
+//                std::cout<<"alpha diff:";
+//                for(int i = 0; i < alpha_diff.size(); i++){
+//                    std::cout<<alpha_diff_host[i]<<" ";
+//                }
+//                std::cout<<std::endl;
                 {
                     TIMED_SCOPE(timerObj, "update f");
                     //update f
                     update_f(f_val, alpha_diff, k_mat_rows, k_mat.n_instances(), kernel_record, working_set_cal_rank_data,
                              cacheIndex, working_set_data);
                 }
+//                LOG(INFO)<<"after update_f f_val:"<<f_val;
                 local_iter += diff_data[1];
                 //LOG(INFO)<<"f:"<<f_val;
                 {
@@ -1176,6 +1618,7 @@ working_set_last_half.set_device_data(&working_set.device_data()[q]);
                     LOG(INFO) << "training finished";
                     float_type obj = calculate_obj(f_val, alpha, y);
                     LOG(INFO) << "obj = " << obj;
+                    LOG(INFO)<<"alpha diff:"<<alpha_diff;
                     break;
                 }
 
@@ -1337,6 +1780,24 @@ CSMOSolver::smo_kernel(const SyncArray<int> &y, SyncArray<float_type> &f_val, Sy
     c_smo_solve(y, f_val, alpha, alpha_diff, working_set, Cp, Cn, k_mat_rows, k_mat_diag, row_len, eps, diff, max_iter,
                 cacheIndex, kernel_record, working_set_cal_rank_data);
 }
+
+void
+CSMOSolver::smo_kernel(const SyncArray<int> &y, SyncArray<float_type> &f_val, SyncArray<float_type> &alpha,
+                       SyncArray<float_type> &alpha_diff,
+                       const SyncArray<int> &working_set, float_type Cp, float_type Cn,
+                       float_type* k_mat_rows,
+                       const SyncArray<float_type> &k_mat_diag, int row_len, float_type eps,
+                       SyncArray<float_type> &diff,
+                       int max_iter,
+                       int *cacheIndex,
+                       float *kernel_record,
+                       int* working_set_cal_rank_data,
+                       int* working_set_data,
+                       int* kernel_value_order) const {
+    c_smo_solve(y, f_val, alpha, alpha_diff, working_set, Cp, Cn, k_mat_rows, k_mat_diag, row_len, eps, diff, max_iter,
+                cacheIndex, kernel_record, working_set_cal_rank_data, working_set_data, kernel_value_order);
+}
+
 
 float_type CSMOSolver::calculate_obj(const SyncArray<float_type> &f_val, const SyncArray<float_type> &alpha,
                                       const SyncArray<int> &y) const {

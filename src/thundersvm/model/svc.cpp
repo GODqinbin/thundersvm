@@ -49,7 +49,10 @@ void SVC::train(const DataSet &dataset, SvmParam param) {
     int k = 0;
     for (int i = 0; i < n_classes; ++i) {
         for (int j = i + 1; j < n_classes; ++j) {
-            train_binary(dataset_, i, j, alpha[k], rho.host_data()[k]);
+            if(!is_train_multi)
+                train_binary(dataset_, i, j, alpha[k], rho.host_data()[k]);
+            else
+                train_binary_multi_label(dataset_, i, j, alpha[k], rho.host_data()[k]);
             vector<int> original_index = dataset_.original_index(i, j);
             CHECK_EQ(original_index.size(), alpha[k].size());
             const float_type *alpha_data = alpha[k].host_data();
@@ -127,7 +130,10 @@ void SVC::train_with_cache(const DataSet &dataset, SvmParam param, float_type* k
     int k = 0;
     for (int i = 0; i < n_classes; ++i) {
         for (int j = i + 1; j < n_classes; ++j) {
-            train_binary(dataset_, i, j, alpha[k], rho.host_data()[k]);
+            if(!is_train_multi)
+                train_binary(dataset_, i, j, alpha[k], rho.host_data()[k]);
+            else
+                train_binary_multi_label(dataset_, i, j, alpha[k], rho.host_data()[k]);
             vector<int> original_index = dataset_.original_index(i, j);
             CHECK_EQ(original_index.size(), alpha[k].size());
             const float_type *alpha_data = alpha[k].host_data();
@@ -197,7 +203,8 @@ void SVC::train_with_cache(const DataSet &dataset, SvmParam param, float_type* k
 
 
 void SVC::train_binary(const DataSet &dataset, int i, int j, SyncArray<float_type> &alpha, float_type &rho) {
-    DataSet::node2d ins = dataset.instances(i, j);//get instances of class i and j
+//    DataSet::node2d ins = dataset.instances(i, j);//get instances of class i and j
+    DataSet::node2d ins = dataset.instances(i, j);
     SyncArray<int> y(ins.size());
     alpha.resize(ins.size());
     SyncArray<float_type> f_val(ins.size());
@@ -215,9 +222,48 @@ void SVC::train_binary(const DataSet &dataset, int i, int j, SyncArray<float_typ
     KernelMatrix k_mat(ins, param);
     int ws_size = min(max2power(ins.size()), 1024);
     CSMOSolver solver;
-    if(is_train_multi)
+//    if(is_train_multi)
+//        solver.solve(k_mat, y, alpha, rho, f_val, param.epsilon, param.C * c_weight[i], param.C * c_weight[j], ws_size,
+//                 kernel_value_cache, in_cache, cacheIndex, insId, global_first, cache_full, free_cache_index, dataset.insMap.data());
+//    else
+        solver.solve(k_mat, y, alpha, rho, f_val, param.epsilon, param.C * c_weight[i], param.C * c_weight[j], ws_size);
+    LOG(INFO) << "rho = " << rho;
+    int n_sv = 0;
+    y_data = y.host_data();
+    float_type *alpha_data = alpha.host_data();
+    for (int l = 0; l < alpha.size(); ++l) {
+        alpha_data[l] *= y_data[l];
+        if (alpha_data[l] != 0) n_sv++;
+    }
+    LOG(INFO) << "#sv = " << n_sv;
+}
+
+void SVC::train_binary_multi_label(DataSet &dataset, int i, int j, SyncArray<float_type> &alpha, float_type &rho) {
+//    DataSet::node2d ins = dataset.instances(i, j);//get instances of class i and j
+    DataSet::node2d ins = dataset.instances_multi_label(i, j);
+    SyncArray<int> y(ins.size());
+    alpha.resize(ins.size());
+    SyncArray<float_type> f_val(ins.size());
+    alpha.mem_set(0);
+    int *y_data = y.host_data();
+    float_type *f_val_data = f_val.host_data();
+    for (int l = 0; l < dataset.count()[i]; ++l) {
+        y_data[l] = +1;
+        f_val_data[l] = -1;
+    }
+    for (int l = 0; l < dataset.count()[j]; ++l) {
+        y_data[dataset.count()[i] + l] = -1;
+        f_val_data[dataset.count()[i] + l] = +1;
+    }
+    KernelMatrix k_mat(ins, param);
+    int ws_size = min(max2power(ins.size()), 1024);
+    CSMOSolver solver;
+    if(is_train_multi) {
+        std::cout << "train multi" << std::endl;
         solver.solve(k_mat, y, alpha, rho, f_val, param.epsilon, param.C * c_weight[i], param.C * c_weight[j], ws_size,
-                 kernel_value_cache, in_cache, cacheIndex, insId);
+                     kernel_value_cache, in_cache, cacheIndex, insId, global_first, cache_full, free_cache_index,
+                     dataset.insMap.data(), kernel_value_order, dataset.origin_new_order.data());
+    }
     else
         solver.solve(k_mat, y, alpha, rho, f_val, param.epsilon, param.C * c_weight[i], param.C * c_weight[j], ws_size);
     LOG(INFO) << "rho = " << rho;

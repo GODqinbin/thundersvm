@@ -8,7 +8,14 @@
 #include <thundersvm/thundersvm.h>
 #include <thundersvm/clion_cuda.h>
 #include <thundersvm/syncarray.h>
-
+//#include <thrust/iterator/permutation_iterator.h>
+//#include "thrust/reduce.h"
+//#include <thrust/adjacent_difference.h>
+//#include <thrust/execution_policy.h>
+//#include <thrust/sequence.h>
+//#include <thrust/sort.h>
+//#include <thrust/binary_search.h>
+//#include <thrust/device_vector.h>
 namespace svm_kernel {
     __host__ __device__ inline bool is_I_up(float a, float y, float Cp, float Cn) {
         return (y > 0 && a < Cp) || (y < 0 && a > 0);
@@ -51,6 +58,20 @@ namespace svm_kernel {
                 int *working_set_cal_rank_data);
 
     void
+    c_smo_solve(const SyncArray<int> &y, SyncArray<float_type> &f_val, SyncArray<float_type> &alpha,
+                SyncArray<float_type> &alpha_diff,
+                const SyncArray<int> &working_set, float_type Cp, float_type Cn,
+                float_type* k_mat_rows,
+                const SyncArray<float_type> &k_mat_diag, int row_len, float_type eps, SyncArray<float_type> &diff,
+                int max_iter,
+                int *cacheIndex,
+                float *kernel_record,
+                int *working_set_cal_rank_data,
+                int *working_set_data,
+                int* kernel_value_order);
+
+
+    void
     nu_smo_solve(const SyncArray<int> &y, SyncArray<float_type> &f_val, SyncArray<float_type> &alpha,
                  SyncArray<float_type> &alpha_diff,
                  const SyncArray<int> &working_set, float_type C, const SyncArray<float_type> &k_mat_rows,
@@ -69,6 +90,11 @@ namespace svm_kernel {
     update_f(SyncArray<float_type> &f, const SyncArray<float_type> &alpha_diff, float_type* k_mat_rows_data,
              int n_instances, float *kernel_record, int *working_set_cal_rank_data, int *cacheIndex,
              int *working_set);
+
+    void
+    update_f(SyncArray<float_type> &f, const SyncArray<float_type> &alpha_diff, float_type* k_mat_rows_data,
+             int n_instances, float *kernel_record, int *working_set_cal_rank_data, int *cacheIndex,
+             int *working_set, int *kernel_value_order, int *insMap);
 
     void sort_f(SyncArray<float_type> &f_val2sort, SyncArray<int> &f_idx2sort);
 }
