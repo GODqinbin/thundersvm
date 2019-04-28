@@ -22,7 +22,8 @@ KernelMatrix::KernelMatrix(const DataSet::node2d &instances, SvmParam param) {
         for (int j = 0; j < instances[i].size(); ++j) {
             csr_val.push_back(instances[i][j].value);
             self_dot += instances[i][j].value * instances[i][j].value;
-            csr_col_ind.push_back(instances[i][j].index - 1);//libSVM data format is one-based, convert to zero-based
+//            csr_col_ind.push_back(instances[i][j].index - 1);//libSVM data format is one-based, convert to zero-based
+            csr_col_ind.push_back(instances[i][j].index); //for zero-based data format
             if (instances[i][j].index > n_features_) n_features_ = instances[i][j].index;
         }
         csr_row_ptr.push_back(csr_row_ptr.back() + instances[i].size());
@@ -91,8 +92,11 @@ void KernelMatrix::get_rows(const SyncArray<int> &idx,
 void KernelMatrix::get_rows(const SyncArray<int> &idx,
                             float_type *kernel_rows,
                             long k_mat_rows_size) const {//compute multiple rows of kernel matrix according to idx
+//    std::cout<<"in get rows"<<std::endl;
     CHECK_GE(k_mat_rows_size, idx.size() * n_instances_) << "kernel_rows memory is too small";
+//    LOG(INFO)<<"before get dot product";
     get_dot_product(idx, kernel_rows);
+//    LOG(INFO)<<"after get dot product";
     switch (param.kernel_type) {
         case SvmParam::RBF:
             RBF_kernel(idx, self_dot_, kernel_rows, idx.size(), n_instances_, param.gamma);
@@ -113,6 +117,7 @@ void KernelMatrix::get_rows(vector<int> &working_set_cal,
                             float_type* kernel_rows,
                             long k_mat_rows_size) const {//compute multiple rows of kernel matrix according to idx
     CHECK_GE(k_mat_rows_size, working_set_cal.size() * n_instances_) << "kernel_rows memory is too small";
+//    std::cout<<"before "
     get_dot_product(working_set_cal, kernel_rows);
     switch (param.kernel_type) {
         case SvmParam::RBF:
@@ -189,9 +194,12 @@ void KernelMatrix::get_dot_product(const SyncArray<int> &idx, SyncArray<float_ty
 }
 
 void KernelMatrix::get_dot_product(const SyncArray<int> &idx, float_type* dot_product) const {
+    LOG(INFO)<<"in get dot product";
     SyncArray<float_type> data_rows(idx.size() * n_features_);
     data_rows.mem_set(0);
+    LOG(INFO)<<"before get working set ins";
     get_working_set_ins(val_, col_ind_, row_ptr_, idx, data_rows, idx.size());
+    LOG(INFO)<<"before dns scr mul";
     dns_csr_mul(data_rows, idx.size(), dot_product);
 }
 

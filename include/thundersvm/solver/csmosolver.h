@@ -27,7 +27,7 @@ public:
                SyncArray<float_type> &f_val, float_type eps, float_type Cp, float_type Cn, int ws_size,
                float_type* kernel_value_cache, bool* in_cache, int* cacheIndex, int* insId,
                bool& global_first, bool& cache_full, int& free_cache_index, int* insMap,
-               int* kernel_value_order, int* origin_map_order) const;
+               int* kernel_value_order, int* origin_map_order, int* used_num, int* time_used) const;
 
 protected:
     void init_f(const SyncArray<float_type> &alpha, const SyncArray<int> &y, const KernelMatrix &k_mat,

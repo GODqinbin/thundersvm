@@ -97,6 +97,11 @@ public:
     ///the index of the free part
     int free_cache_index = 0;
 
+    ///the frequency of the instance
+    int* used_num;
+
+    ///the recently used time (iteration number)
+    int* time_used;
 protected:
 
     /**

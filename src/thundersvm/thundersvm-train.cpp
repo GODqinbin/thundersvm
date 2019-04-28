@@ -19,8 +19,12 @@ int main(int argc, char **argv) {
         parser.parse_command_line(argc, argv);
         DataSet train_dataset;
         bool train_multi_label = 1;
-        if(train_multi_label)
+        int max_label;
+        if(train_multi_label) {
             train_dataset.load_from_multi_label_file(parser.svmtrain_input_file_name);
+            max_label = train_dataset.max_multi_label();
+            std::cout<<"max num label:"<<max_label<<std::endl;
+        }
         else
             train_dataset.load_from_file(parser.svmtrain_input_file_name);
 //        std::shared_ptr<SvmModel> model;
@@ -62,8 +66,7 @@ int main(int argc, char **argv) {
             LOG(WARNING)<<"using default gamma="<<parser.param_cmd.gamma;
         }
 
-        int max_label = train_dataset.max_multi_label();
-        std::cout<<"max num label:"<<max_label<<std::endl;
+
 
 #ifdef USE_CUDA
         CUDA_CHECK(cudaSetDevice(parser.gpu_id));
@@ -159,6 +162,8 @@ int main(int argc, char **argv) {
             if(model->is_train_multi) {
                 model->init_cache(n_instances, n_cache_line);
 
+                //only try 100 labels
+                max_label = 10;
                 for (int i = 1; i <= max_label; i++) {
                     vector <float_type> predict_y;
                     if (!train_dataset.init_y_id(i))
@@ -167,15 +172,19 @@ int main(int argc, char **argv) {
                     model->train(train_dataset, parser.param_cmd);
                     LOG(INFO) << "training finished";
 
-
+                    continue;
                     LOG(INFO) << "evaluating training score";
                     predict_y = model->predict(train_dataset.instances(), 1000);
 
+                    float current_accuracy;
                     if (metric) {
 //                    LOG(INFO) << metric->name() << " = " << metric->score(predict_y, train_dataset.y());
-                        overall_accuracy += metric->score(predict_y, train_dataset.y());
+                        current_accuracy = metric->score(predict_y, train_dataset.y());
+                        overall_accuracy += current_accuracy;
+//                        overall_accuracy += metric->score(predict_y, train_dataset.y());
                     }
-
+                    LOG(INFO) <<"accuracy of current solver:"<<current_accuracy;
+                    LOG(INFO) <<"accumulated accuracy:"<<overall_accuracy/i;
 
 //                model.reset();
 //                metric.reset();
@@ -188,7 +197,7 @@ int main(int argc, char **argv) {
             else{
                 model->train(train_dataset, parser.param_cmd);
                 LOG(INFO)<<"training finished";
-                //	return 0;
+                	return 0;
                 model->save_to_file(parser.model_file_name);
                 LOG(INFO)<<"evaluating training score";
                 vector<float_type> predict_y;

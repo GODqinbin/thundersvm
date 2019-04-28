@@ -278,4 +278,8 @@ void SvmModel::init_cache(int n_instance, int n_cache_line){
     memset(in_cache, 0, sizeof(bool) * n_instance);
     cacheIndex = new int[n_instance];
     insId = new int[n_cache_line];
+    used_num = new int[n_instance];
+    memset(used_num, 0, sizeof(int) * n_instance);
+    time_used = new int[n_cache_line];
+    memset(time_used, -1, n_cache_line * sizeof(int));
 }

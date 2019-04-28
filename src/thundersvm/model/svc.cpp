@@ -262,7 +262,7 @@ void SVC::train_binary_multi_label(DataSet &dataset, int i, int j, SyncArray<flo
         std::cout << "train multi" << std::endl;
         solver.solve(k_mat, y, alpha, rho, f_val, param.epsilon, param.C * c_weight[i], param.C * c_weight[j], ws_size,
                      kernel_value_cache, in_cache, cacheIndex, insId, global_first, cache_full, free_cache_index,
-                     dataset.insMap.data(), kernel_value_order, dataset.origin_new_order.data());
+                     dataset.insMap.data(), kernel_value_order, dataset.origin_new_order.data(), used_num, time_used);
     }
     else
         solver.solve(k_mat, y, alpha, rho, f_val, param.epsilon, param.C * c_weight[i], param.C * c_weight[j], ws_size);

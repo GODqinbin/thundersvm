@@ -24,17 +24,17 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
                   SyncArray<float_type> &f_val, float_type eps, float_type Cp, float_type Cn, int ws_size,
                   float_type* kernel_value_cache, bool* in_cache, int* cacheIndex, int* insId,
                   bool& global_first, bool& cache_full, int& free_cache_index, int* intMap,
-                  int* kernel_value_order, int* origin_map_order) const {
+                  int* kernel_value_order, int* origin_map_order, int* used_num, int* time_used) const {
     TIMED_SCOPE(timerObj, "solve");
     std::cout<<"in multi label solver"<<std::endl;
     std::cout<<"cache_full:"<<cache_full<<std::endl;
     int out_max_iter = 50000;
     int numT = 20;
 
-    std::cout<<"intmap 99:"<<intMap[99]<<std::endl;
-    std::cout<<"origin_map_order[intmap[99]]:"<<origin_map_order[intMap[99]]<<std::endl;
-    std::cout<<"intmap 30800:"<<intMap[30800]<<std::endl;
-    std::cout<<"origin_map_order[intmap[30800]]:"<<origin_map_order[intMap[30800]]<<std::endl;
+//    std::cout<<"intmap 99:"<<intMap[99]<<std::endl;
+//    std::cout<<"origin_map_order[intmap[99]]:"<<origin_map_order[intMap[99]]<<std::endl;
+//    std::cout<<"intmap 30800:"<<intMap[30800]<<std::endl;
+//    std::cout<<"origin_map_order[intmap[30800]]:"<<origin_map_order[intMap[30800]]<<std::endl;
     int divide = 50;
     int is_front = -1;
     //avoid infinite loop of repeated local diff
@@ -109,7 +109,7 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
 
     float_type *k_mat_rows_first_half = k_mat_rows;
     float_type *k_mat_rows_last_half = k_mat_rows + ws_kernel_size / 2;
-    int *used_num;
+//    int *used_num;
 
 
     bool *in_choose;
@@ -117,8 +117,16 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
 //    bool *in_cache = new bool[n_instances];//whether kernel row value in cache
 //    int *cacheIndex = new int[n_instances];//index of kernel row value in kernel_record
 //    bool *in_choose = new bool[n_instances];
-    used_num = (int *) malloc(n_instances * sizeof(int));
-    memset(used_num, 0, sizeof(int) * n_instances);
+//    used_num = (int *) malloc(n_instances * sizeof(int));
+
+
+    for(int i = 0; i < n_instances; i++){
+        if(used_num[i] == 0)
+            used_num[i] = 1;
+        else
+            used_num[i] = 0;
+    }
+//    memset(used_num, 0, sizeof(int) * n_instances);
 
     in_choose = (bool *) malloc(n_instances * sizeof(bool));
 //    int free_cache_index = 0;
@@ -130,7 +138,10 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
     //int copy_num = 0;
 
 
-    int *time_used = new int[cache_line_num];
+//    int *time_used = new int[cache_line_num];
+
+
+
     memset(time_used, -1, sizeof(int) * cache_line_num);
 
 
@@ -185,13 +196,13 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
                     working_set_map[i] = intMap[working_host[i]];
                 }
                 int *working_set_data = working_set_map.data();
-                std::cout<<"after working set map"<<std::endl;
+//                std::cout<<"after working set map"<<std::endl;
 				for(int j = 0; j < ws_size; j++){
                     if(origin_map_order[working_set_data[j]] != working_host[j])
                         std::cout<<"first origin wrong:"<<j<<"working_set:"<<working_host[j]<<std::endl;
                 }
 //                SyncArray<int> working_set_origin_map(working_set.size());
-                LOG(INFO)<<"before get rows";
+//                LOG(INFO)<<"before get rows";
 				{
                     TIMED_SCOPE(timerObj, "get rows");
                     k_mat.get_rows(working_set, k_mat_rows, ws_kernel_size);
@@ -332,6 +343,7 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
                 }
 
 
+
                 int first_half_cal_num;
                 {
                     TIMED_SCOPE(timerObj, "ws&kv setup");
@@ -402,8 +414,8 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
                             miss_num++;
                             working_set_cal_rank_data[i] = rank++;
                             working_set_cal.push_back(working_set_data[i]);
-                            if(working_set_data[i] == 545)
-                                std::cout<<"545 the working set id:"<<i<<std::endl;
+//                            if(working_set_data[i] == 545)
+//                                std::cout<<"545 the working set id:"<<i<<std::endl;
                             working_set_cal_mat_id.push_back(working_host[i]);
                         }
                         //if use local reuse_dis, the condition is always false
@@ -1022,11 +1034,11 @@ CSMOSolver::solve(const KernelMatrix &k_mat, const SyncArray<int> &y, SyncArray<
 
         printf("\n");
 
-        free(used_num);
+//        free(used_num);
 
 
         free(in_choose);
-        delete[] time_used;
+//        delete[] time_used;
         //free(k_mat_rows);
         //free(kernel_record);
         delete[] k_mat_rows;
@@ -1492,6 +1504,7 @@ working_set_last_half.set_device_data(&working_set.device_data()[q]);
                                 else
                                     lru_hit_ratio_1 = (float) lru_hit_count_1 / (ws_size / 2 * seg_iter_size);
                                 if(lru_hit_ratio_1 == 1){
+                                    n_switch++;
                                     use_lru = 1;
                                 }
                                 else {
@@ -1499,14 +1512,18 @@ working_set_last_half.set_device_data(&working_set.device_data()[q]);
 //                                std::cout << "use lru" << std::endl;
                                         lru_hit_num_last_time = lru_hit_count_1;
                                         lfu_hit_num_last_time = lfu_hit_num;
+                                        n_switch++;
                                         use_lru = 1;
                                     }
                                 }
                             }
                             else{
 //                        if(lru_hit_num < lru_hit_num_last_time)
-                                if(lru_hit_num < lfu_hit_num_last_time)
+                                if(lru_hit_num < lfu_hit_num_last_time){
+                                    n_switch++;
                                     use_lru = 0;
+                                }
+
                             }
                             lfu_hit_num = 0;
                             lru_hit_num = 0;
@@ -1647,7 +1664,7 @@ working_set_last_half.set_device_data(&working_set.device_data()[q]);
 //    std::cout<<"copy num:"<<copy_num<<std::endl;
 //    std::cout<<"new miss num:"<<new_miss_num<<std::endl;
     std::cout<<"hit ratio:"<<1.0 * hit_num / (hit_num + miss_num) << std::endl;
-
+    std::cout<<"number of switches:"<<n_switch<<std::endl;
 }
 
 
